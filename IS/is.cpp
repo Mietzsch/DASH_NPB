@@ -144,13 +144,19 @@ int passed_verification;
 /* See SIZE_OF_BUFFERS def above    */
 /************************************/
 dash::Array<INT_TYPE> key_array;
-dash::Array<INT_TYPE> key_buff1;
 dash::Array<INT_TYPE> key_buff2;
+
 INT_TYPE partial_verify_vals[TEST_ARRAY_SIZE];
 
 #ifdef USE_BUCKETS
 dash::Array<INT_TYPE> bucket_size;
-//INT_TYPE bucket_ptrs[NUM_BUCKETS];
+
+using pattern_t = dash::CSRPattern<1>;
+using array_t   = dash::Array<INT_TYPE, pattern_t::index_type, pattern_t>;
+
+array_t key_buff1;
+#else
+dash::Array<INT_TYPE> key_buff1;
 #endif
 
 
@@ -441,13 +447,34 @@ void alloc_key_buff( void )
     num_procs = dash::size();
 
 		key_array.allocate(NUM_KEYS, dash::BLOCKED);
-		key_buff1.allocate(MAX_KEY, dash::BLOCKED);
-		key_buff2.allocate(NUM_KEYS, dash::BLOCKED);
+    key_buff2.allocate(NUM_KEYS, dash::BLOCKED);
 
 #ifdef USE_BUCKETS
 
 		bucket_size.allocate(NUM_BUCKETS*num_procs, dash::BLOCKED);
 
+    int shift = MAX_KEY_LOG_2 - NUM_BUCKETS_LOG_2;
+    INT_TYPE num_bucket_keys = (1L << shift);
+
+    std::vector<pattern_t::size_type> l_sizes;
+    dash::Array<int> dummy(NUM_BUCKETS);
+
+    dash::Array<pattern_t::size_type> my_elem_count(dash::size());
+
+    my_elem_count.local[0] = dummy.lsize() * num_bucket_keys;
+
+    dash::barrier();
+
+    for (int unit_idx = 0; unit_idx < dash::size(); ++unit_idx) {
+      l_sizes.push_back(my_elem_count[unit_idx]);
+    }
+
+    pattern_t pattern(l_sizes);
+
+    key_buff1.allocate(pattern);
+
+#else
+  key_buff1.allocate(MAX_KEY, dash::BLOCKED);
 #endif /*USE_BUCKETS*/
 }
 
@@ -564,7 +591,6 @@ void rank( int iteration )
   	dash::for_each(key_array.begin(), key_array.end(), [shift](int k) {
   		bucket_size.local[k >> shift]++;
   	});
-    key_array.barrier();
 
     /*  Accumulative bucket sizes are the bucket pointers.
     These are global sizes accumulated upon to each bucket */
@@ -598,8 +624,6 @@ void rank( int iteration )
       local_sizes.push_back(my_elem_count[unit_idx]);
     }
 
-    dash::barrier();
-
   	pattern_t pattern(local_sizes);
 
   	dash::Array<INT_TYPE, index_t, pattern_t> key_buff2l(pattern);
@@ -608,7 +632,6 @@ void rank( int iteration )
   	dash::for_each(key_array.begin(), key_array.end(), [&shift, &bucket_ptrs, &key_buff2l](int k) {
   		key_buff2l[bucket_ptrs.local[k >> shift]++] = k;
   	});
-  	key_array.barrier();
 
   	if (myid < num_procs-1) {
   		for( i=0; i< NUM_BUCKETS; i++ )
@@ -632,12 +655,13 @@ void rank( int iteration )
 
   	dash::for_each(v.begin(), v.end(), [&num_bucket_keys, &bucket_ptrs, &key_buff2l, &local_buckets, &myid](int i)	{
 
+      int key_buff1_offset = local_buckets * myid * num_bucket_keys;
   		/*  Clear the work array section associated with each bucket */
   		INT_TYPE j;
-  		INT_TYPE k1 = i * num_bucket_keys;
+  		INT_TYPE k1 = i * num_bucket_keys - key_buff1_offset;
   		INT_TYPE k2 = k1 + num_bucket_keys;
   		for ( j = k1; j < k2; j++ )
-  			key_buff1[j] = 0;
+  			key_buff1.local[j] = 0;
 
   		/*  Ranking of all keys occurs in this section:                 */
       int key_buff2_offset = (myid > 0)? bucket_ptrs.local[myid*local_buckets-1] : 0;
@@ -647,15 +671,14 @@ void rank( int iteration )
   		individual population                                       */
   		INT_TYPE m = (i > 0)? bucket_ptrs.local[i-1] : 0;
   		for ( j = m - key_buff2_offset; j < bucket_ptrs.local[i] - key_buff2_offset; j++ )
-  			key_buff1[key_buff2l.local[j]]++;  /* Now they have individual key   */
-  																			/* population                     */
+  			key_buff1.local[key_buff2l.local[j] - key_buff1_offset]++;  /* Now they have individual key population */
 
   			/*  To obtain ranks of each key, successively add the individual key
   			population, not forgetting to add m, the total of lesser keys,
   			to the first key population                                          */
-  			key_buff1[k1] += m;
+  			key_buff1.local[k1] += m;
   			for ( j = k1+1; j < k2; j++ )
-  				key_buff1[j] += key_buff1[j-1];
+  				key_buff1.local[j] += key_buff1.local[j-1];
   		});
 
 #else /*USE_BUCKETS*/
