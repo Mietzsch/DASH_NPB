@@ -33,7 +33,7 @@
 /* Example:  SGI O2000:   400% slowdown with buckets (Wow!)      */
 /*****************************************************************/
 /* To disable the use of buckets, comment out the following line */
-#define USE_BUCKETS
+//#define USE_BUCKETS
 
 /* Uncomment below for cyclic schedule */
 /*#define SCHED_CYCLIC*/
@@ -157,6 +157,9 @@ using array_t   = dash::Array<INT_TYPE, pattern_t::index_type, pattern_t>;
 array_t key_buff1;
 #else
 dash::Array<INT_TYPE> key_buff1;
+
+using glob_ptr_t = dash::GlobMemAllocPtr<INT_TYPE>;
+dash::Array<glob_ptr_t> work_buffers;
 #endif
 
 
@@ -475,6 +478,10 @@ void alloc_key_buff( void )
 
 #else
   key_buff1.allocate(MAX_KEY, dash::BLOCKED);
+
+  work_buffers.allocate(num_procs, dash::CYCLIC);
+
+  work_buffers[dash::myid()] = dash::memalloc<INT_TYPE>(MAX_KEY);
 #endif /*USE_BUCKETS*/
 }
 
@@ -683,16 +690,12 @@ void rank( int iteration )
 
 #else /*USE_BUCKETS*/
 
-    using glob_ptr_t = dash::GlobMemAllocPtr<INT_TYPE>;
-
-    dash::Array<glob_ptr_t> work_buffers(num_procs, dash::CYCLIC);
-
-    work_buffers[myid] = dash::memalloc<INT_TYPE>(MAX_KEY);
-
     glob_ptr_t gptr = work_buffers[myid];
     INT_TYPE * work_buf = static_cast<INT_TYPE *>(gptr);
 
-    dash::barrier();
+    for(int i=0; i<MAX_KEY; i++ ) {
+        work_buf[i] = 0;
+    }
 
     // compute the histogram for the local keys
     for(int i=0; i<key_array.lsize(); i++) {
@@ -704,13 +707,10 @@ void rank( int iteration )
       work_buf[i+1] += work_buf[i];
     }
 
-
     // compute the offset of this unit's local part in
     // the global key_buff1 array
     auto& pat = key_buff1.pattern();
     int goffs = pat.global(0);
-
-    dash::barrier();
 
     for(int i=0; i<key_buff1.lsize(); i++ ) {
       key_buff1.local[i] = work_buf[goffs+i];
@@ -727,7 +727,6 @@ void rank( int iteration )
 
     dash::barrier();
 
-    //dash::memfree<INT_TYPE>(work_buffers[myid], MAX_KEY);
 #endif /*USE_BUCKETS*/
 
 
@@ -947,6 +946,7 @@ int main( int argc, char **argv )
     {
         if (0 == dash::myid()) if( CLASS != 'S' ) printf( "        %d\n", iteration );
         rank( iteration );
+        dash::barrier();
     }
 
 		if (0 == dash::myid()) {
@@ -972,6 +972,7 @@ int main( int argc, char **argv )
 	    /*  The final printout  */
 	    if( passed_verification != 5*MAX_ITERATIONS + 1 )
 	        passed_verification = 0;
+
 	    /*c_print_results( "IS", CLASS, (int)(TOTAL_KEYS/64), 64, 0, MAX_ITERATIONS, timecounter, ((double) (MAX_ITERATIONS*TOTAL_KEYS))
 	    /timecounter/1000000., "keys ranked", passed_verification, NPBVERSION, COMPILETIME, CC, CLINK, C_LIB, C_INC,
 	    CFLAGS, CLINKFLAGS );*/
