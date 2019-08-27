@@ -158,8 +158,7 @@ array_t key_buff1;
 #else
 dash::Array<INT_TYPE> key_buff1;
 
-using glob_ptr_t = dash::GlobMemAllocPtr<INT_TYPE>;
-dash::Array<glob_ptr_t> work_buffers;
+dash::Array<INT_TYPE> work_buffers;
 #endif
 
 
@@ -479,9 +478,7 @@ void alloc_key_buff( void )
 #else
   key_buff1.allocate(MAX_KEY, dash::BLOCKED);
 
-  work_buffers.allocate(num_procs, dash::CYCLIC);
-
-  work_buffers[dash::myid()] = dash::memalloc<INT_TYPE>(MAX_KEY);
+  work_buffers.allocate(num_procs*MAX_KEY);
 #endif /*USE_BUCKETS*/
 }
 
@@ -690,21 +687,16 @@ void rank( int iteration )
 
 #else /*USE_BUCKETS*/
 
-    glob_ptr_t gptr = work_buffers[myid];
-    INT_TYPE * work_buf = static_cast<INT_TYPE *>(gptr);
-
-    for(int i=0; i<MAX_KEY; i++ ) {
-        work_buf[i] = 0;
-    }
+    std::fill(work_buffers.lbegin(), work_buffers.lend(), 0);
 
     // compute the histogram for the local keys
     for(int i=0; i<key_array.lsize(); i++) {
-        work_buf[ key_array.local[i] ]++;
+        work_buffers.local[ key_array.local[i] ]++;
       }
 
     // turn it into a cumulative histogram
     for(int i=0; i<MAX_KEY-1; i++ ) {
-      work_buf[i+1] += work_buf[i];
+      work_buffers.local[i+1] += work_buffers.local[i];
     }
 
     // compute the offset of this unit's local part in
@@ -713,15 +705,14 @@ void rank( int iteration )
     int goffs = pat.global(0);
 
     for(int i=0; i<key_buff1.lsize(); i++ ) {
-      key_buff1.local[i] = work_buf[goffs+i];
+      key_buff1.local[i] = work_buffers.local[goffs+i];
     }
 
     dash::barrier();
 
     for(int unit=1; unit<num_procs; unit++ ) {
-      glob_ptr_t remote = work_buffers[(myid+unit)%num_procs];
       for(int i=0; i<key_buff1.lsize(); i++ ) {
-        key_buff1.local[i] += remote[goffs+i];
+        key_buff1.local[i] += work_buffers[((myid+unit)%num_procs)*MAX_KEY+goffs+i];
       }
     }
 
