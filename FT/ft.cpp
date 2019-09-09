@@ -101,7 +101,7 @@ int main(int argc, char **argv) {
 	c short benchmark. The other NPB 2 implementations are similar.
 	c-------------------------------------------------------------------*/
 	if(0 == dash::myid()) {
-		for (i = 0; i < T_MAX+1; i++) {
+		for (i = 0; i < T_MAX; i++) {
 			timer_clear(i);
 		}
 	}
@@ -120,7 +120,7 @@ int main(int argc, char **argv) {
 	c be timed, in contrast to other benchmarks.
 	c-------------------------------------------------------------------*/
 	if(0 == dash::myid()) {
-		for (i = 0; i < T_MAX+1; i++) {
+		for (i = 0; i < T_MAX; i++) {
 			timer_clear(i);
 		}
 
@@ -154,19 +154,17 @@ int main(int argc, char **argv) {
 			timer_stop(T_FFT);
 		}
 	}
-	printf("Started: %d\n", (int) dash::myid());
 
 	for (iter = 1; iter <= niter; iter++) {
 
-		printf("Started: %d\n", (int) dash::myid());
 		if(0 == dash::myid()) {
 			if (TIMERS_ENABLED == TRUE) {
 				timer_start(T_EVOLVE);
 			}
 		}
-		printf("Started: %d\n", (int) dash::myid());
 
 		evolve(u0, u1, iter, indexmap);
+		dash::barrier();
 
 		if(0 == dash::myid()) {
 			if (TIMERS_ENABLED == TRUE) {
@@ -178,6 +176,7 @@ int main(int argc, char **argv) {
 		}
 
 		fft(-1, u1, u2);
+		dash::barrier();
 
 		if(0 == dash::myid()) {
 			if (TIMERS_ENABLED == TRUE) {
@@ -189,6 +188,7 @@ int main(int argc, char **argv) {
 		}
 
 		checksum(iter, u2);
+
 		if(0 == dash::myid()) {
 			if (TIMERS_ENABLED == TRUE) {
 				timer_stop(T_CHECKSUM);
@@ -213,9 +213,6 @@ if(0 == dash::myid()) {
 		c_print_results((char*)"FT", class_npb, NX, NY, NZ, niter, nthreads, total_time, mflops, (char*)"		  floating point", verified,
 		(char*)NPBVERSION, (char*)COMPILETIME, (char*)CS1, (char*)CS2, (char*)CS3, (char*)CS4, (char*)CS5, (char*)CS6, (char*)CS7);
 		if (TIMERS_ENABLED == TRUE) print_timers();
-
-		//printf("\n mystl statistics:\n");
-		//std::dump();
 	}
 	dash::finalize();
 
@@ -226,9 +223,6 @@ if(0 == dash::myid()) {
 c-------------------------------------------------------------------*/
 
 static void evolve(dash::NArray<dcomplex, 3> &u0, dash::NArray<dcomplex, 3> &u1, int t, dash::NArray<int, 3> &indexmap) {
-
-	printf("Started evolve: %d\n", (int) dash::myid());
-if(0 == dash::myid()){
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -238,23 +232,21 @@ if(0 == dash::myid()){
 
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 
-	for(int k = 0; k < dims[0][2]; k++){
+	for(int k = 0; k < u1.local.extent(0); k++){
 		for (int j = 0; j < dims[0][1]; j++) {
 			for (int i = 0; i < NX; i++) {
-				//crmul(u1[k][j][i], u0[k][j][i], ex[t*indexmap[k][j][i]]);
-				u1[k][j][i] = crmulret(u0[k][j][i], ex[t*indexmap[k][j][i]]);
+				crmul(u1.local[k][j][i], u0.local[k][j][i], ex[t*indexmap.local[k][j][i]]);
 			}
 		}
 	}
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
-}
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
 static void compute_initial_conditions(dash::NArray<dcomplex, 3> &u0) {
-if(0 == dash::myid()) {
+// if(0 == dash::myid()) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -266,7 +258,8 @@ if(0 == dash::myid()) {
 	/*double x0, start, an, dummy;*/
 	double start, an;
 	//double tmp[NX*2*MAXDIM+1];
-	double starts[NZ];
+	// double starts[NZ];
+	dash::Array<double> starts(NZ*dash::size());
 
 	start = SEED;
 	/*--------------------------------------------------------------------
@@ -276,42 +269,41 @@ if(0 == dash::myid()) {
 	/*dummy = */randlc(&start, an);
 	ipow46(A, 2*NX*NY, &an);
 
-	starts[0] = start;
+	starts.local[0] = start;
 	for(int i=1; i<dims[0][2]; i++){
 		randlc(&start, an);
-		starts[i] = start;
+		starts.local[i] = start;
 	}
 
 	/*--------------------------------------------------------------------
 	c Go through by z planes filling in one square at a time.
 	c-------------------------------------------------------------------*/
+	int zplanes_per_unit = ceil((double) u0.extent(0) / dash::size());
+	int myoffset = dash::myid()*zplanes_per_unit;
 
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 
-	int v[dims[0][2]];
-	std::iota(&v[0], &v[dims[0][2]], 0);
-
-	for(int k = 0; k < dims[0][2]; k++){
+	for(int k = 0; k < u0.local.extent(0); k++){
 		double * tmp = new double[NX*2*MAXDIM+1];
 
-		double x0 = starts[k];
+		double x0 = starts.local[k+myoffset];
 		vranlc(2*NX*dims[0][1], &x0, A, tmp);
 
 		int t = 1;
 		for (int j = 0; j < dims[0][1]; j++) {
 			for (int i = 0; i < NX; i++) {
-				dcomplex v0;
-				v0.real = tmp[t++];
-				v0.imag = tmp[t++];
-				u0[k][j][i] = v0;
-				//u0.local[k][j][i].real = tmp[t++];
-				//u0.local[k][j][i].imag = tmp[t++];
+				// dcomplex v0;
+				// v0.real = tmp[t++];
+				// v0.imag = tmp[t++];
+				// u0[k][j][i] = v0;
+				u0.local[k][j][i].real = tmp[t++];
+				u0.local[k][j][i].imag = tmp[t++];
 			}
 			//if (k != dims[0][2]) /*dummy = */randlc(&start, an);
 		}
 	}
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
-}
+// }
 }
 
 /*--------------------------------------------------------------------
@@ -361,6 +353,7 @@ c-------------------------------------------------------------------*/
 static void setup(void) {
 
 	int i;
+	niter = NITER_DEFAULT;
 	if(0 == dash::myid()) {
 		/*--------------------------------------------------------------------
 		c-------------------------------------------------------------------*/
@@ -371,8 +364,6 @@ static void setup(void) {
 		printf("\n\n NAS Parallel Benchmarks 4.0 OpenMP C++STL_array version" " - FT Benchmark\n\n");
 		printf("\n\n Developed by: Dalvan Griebler <dalvan.griebler@acad.pucrs.br>\n");
 		printf("\n\n STL version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
-
-		niter = NITER_DEFAULT;
 
 		printf(" Size				: %3dx%3dx%3d\n", NX, NY, NZ);
 		printf(" Iterations		  :	 %7d\n", niter);
@@ -425,9 +416,6 @@ c-------------------------------------------------------------------*/
 
 static void compute_indexmap(dash::NArray<int, 3> &indexmap) {
 
-	int i;
-	double ap;
-if(0 == dash::myid()) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -436,8 +424,8 @@ if(0 == dash::myid()) {
 	c for time evolution exponent.
 	c-------------------------------------------------------------------*/
 
-	//int i;
-	//double ap;
+	int i;
+	double ap;
 
 	/*--------------------------------------------------------------------
 	c basically we want to convert the fortran indices
@@ -450,24 +438,24 @@ if(0 == dash::myid()) {
 
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 
-	int v[dims[2][0]];
-	std::iota(&v[0], &v[dims[2][0]], 0);
+	int zplanes_per_unit = ceil((double) indexmap.extent(0) / dash::size());
+	int myoffset = dash::myid()*zplanes_per_unit;
 
-	for(int i = 0; i < dims[2][0]; i++) {
-		int ii =  (i+1+xstart[2]-2+NX/2)%NX - NX/2;
-		int ii2 = ii*ii;
+	for(int k = 0; k < indexmap.local.extent(0); k++) {
+		int kk = (k+myoffset+1+zstart[2]-2+NZ/2)%NZ - NZ/2;
+		int kk2 = kk*kk;
 		for (int j = 0; j < dims[2][1]; j++) {
 			int jj = (j+1+ystart[2]-2+NY/2)%NY - NY/2;
-			int ij2 = jj*jj+ii2;
-			for (int k = 0; k < dims[2][2]; k++) {
-				int kk = (k+1+zstart[2]-2+NZ/2)%NZ - NZ/2;
-				indexmap[k][j][i] = kk*kk+ij2;
+			int jj2 = jj*jj;
+			for(int i = 0; i < dims[2][0]; i++) {
+				int ii =  (i+1+xstart[2]-2+NX/2)%NX - NX/2;
+				indexmap.local[k][j][i] = kk2+jj2+ii*ii;
 			}
 		}
 	}
 
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
-}
+
 	/*--------------------------------------------------------------------
 	c compute array of exponentials for time evolution.
 	c-------------------------------------------------------------------*/
@@ -489,18 +477,18 @@ static void print_timers(void) {
 	c-------------------------------------------------------------------*/
 
 	int i;
-	const char *tstrings[] = { "		  total ",
-	"		  setup ",
-	"			fft ",
-	"		 evolve ",
-	"	   checksum ",
-	"		 fftlow ",
-	"		fftcopy ",
-	"	   STL time "};
+	const char *tstrings[] = {
+	"    total ",
+	"    setup ",
+	"      fft ",
+	"   evolve ",
+	" checksum ",
+	" fftlow ",
+	" fftcopy "};
 
-	for (i = 0; i < T_MAX+1; i++) {
+	for (i = 0; i < T_MAX; i++) {
 		if (timer_read(i) != 0.0) {
-			printf("timer %2d(%16s) :%10.6f\n", i, tstrings[i], timer_read(i));
+			printf("timer %2d(%s) :%10.6f\n", i, tstrings[i], timer_read(i));
 		}
 	}
 }
@@ -527,8 +515,8 @@ static void fft(int dir, dash::NArray<dcomplex, 3> &x1, dash::NArray<dcomplex, 3
 		cffts3(1, dims[2], x1, x2);/* x1 -> x2 */
 	} else {
 		cffts3(-1, dims[2], x1, x1);/* x1 -> x1 */
-		cffts2(-1, dims[1], x1, x1);/* x1 -> x1 */
 		dash::barrier();
+		cffts2(-1, dims[1], x1, x1);/* x1 -> x1 */
 		cffts1(-1, dims[0], x1, x2);/* x1 -> x2 */
 	}
 }
@@ -537,7 +525,6 @@ static void fft(int dir, dash::NArray<dcomplex, 3> &x1, dash::NArray<dcomplex, 3
 c-------------------------------------------------------------------*/
 
 static void cffts1(int is, int d[3], dash::NArray<dcomplex, 3> &x, dash::NArray<dcomplex, 3> &xout) {
-if(0 == dash::myid()) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -549,10 +536,7 @@ if(0 == dash::myid()) {
 
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 
-	int v[d[2]];
-	std::iota(&v[0], &v[d[2]], 0);
-
-	for(int k = 0; k < d[2]; k++) {
+	for(int k = 0; k < x.local.extent(0); k++) {
 		dcomplex y0[NX][FFTBLOCKPAD];
 		dcomplex y1[NX][FFTBLOCKPAD];
 
@@ -560,9 +544,8 @@ if(0 == dash::myid()) {
 				//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 				for (int j = 0; j < fftblock; j++) {
 					for (int i = 0; i < d[0]; i++) {
-						y0[i][j] = x[k][j+jj][i];
-						//y0[i][j].real = x.local[k][j+jj][i].real;
-						//y0[i][j].imag = x.local[k][j+jj][i].imag;
+						y0[i][j].real = x.local[k][j+jj][i].real;
+						y0[i][j].imag = x.local[k][j+jj][i].imag;
 					}
 				}
 				//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
@@ -572,9 +555,8 @@ if(0 == dash::myid()) {
 				//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 				for (int j = 0; j < fftblock; j++) {
 					for (int i = 0; i < d[0]; i++) {
-						xout[k][j+jj][i] = y0[i][j];
-						//xout.local[k][j+jj][i].real = y0[i][j].real;
-						//xout.local[k][j+jj][i].imag = y0[i][j].imag;
+						xout.local[k][j+jj][i].real = y0[i][j].real;
+						xout.local[k][j+jj][i].imag = y0[i][j].imag;
 					}
 				}
 			//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
@@ -582,13 +564,11 @@ if(0 == dash::myid()) {
 	}
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
 }
-}
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
 static void cffts2(int is, int d[3], dash::NArray<dcomplex, 3> &x, dash::NArray<dcomplex, 3> &xout) {
-if(0 == dash::myid()) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -600,10 +580,7 @@ if(0 == dash::myid()) {
 
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 
-	int v[d[2]];
-	std::iota(&v[0], &v[d[2]], 0);
-
-	for(int k = 0; k < d[2]; k++) {
+	for(int k = 0; k < x.local.extent(0); k++) {
 		dcomplex y0[NX][FFTBLOCKPAD];
 		dcomplex y1[NX][FFTBLOCKPAD];
 
@@ -611,9 +588,8 @@ if(0 == dash::myid()) {
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 			for (int j = 0; j < d[1]; j++) {
 				for (int i = 0; i < fftblock; i++) {
-					y0[j][i] = x[k][j][i+ii];
-					//y0[j][i].real = x.local[k][j][i+ii].real;
-					//y0[j][i].imag = x.local[k][j][i+ii].imag;
+					y0[j][i].real = x.local[k][j][i+ii].real;
+					y0[j][i].imag = x.local[k][j][i+ii].imag;
 				}
 			}
 			//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
@@ -623,16 +599,14 @@ if(0 == dash::myid()) {
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 			for (int j = 0; j < d[1]; j++) {
 				for (int i = 0; i < fftblock; i++) {
-					xout[k][j][i+ii] = y0[j][i];
-					//xout.local[k][j][i+ii].real = y0[j][i].real;
-					//xout.local[k][j][i+ii].imag = y0[j][i].imag;
+					xout.local[k][j][i+ii].real = y0[j][i].real;
+					xout.local[k][j][i+ii].imag = y0[j][i].imag;
 				}
 			}
 		//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
 		}
 	}
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
-}
 }
 
 /*--------------------------------------------------------------------

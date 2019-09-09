@@ -6,9 +6,9 @@ c If processor array is 1x1 -> 0D grid decomposition
 
 
 c Cache blocking params. These values are good for most
-c RISC processors.  
+c RISC processors.
 c FFT parameters:
-c  fftblock controls how many ffts are done at a time. 
+c  fftblock controls how many ffts are done at a time.
 c  The default is appropriate for most cache-based machines
 c  On vector machines, the FFT can be vectorized with vector
 c  length equal to the block size, so the block size should
@@ -26,10 +26,10 @@ c  512 for class C.
 /* COMMON block: blockinfo */
 int fftblock;
 int fftblockpad;
-      
+
 /*
 c we need a bunch of logic to keep track of how
-c arrays are laid out. 
+c arrays are laid out.
 
 
 c Note: this serial version is the derived from the parallel 0D case
@@ -51,7 +51,7 @@ c fftx(1)
 c compute residual(1)
 
 c for the 0D, 1D, 2D strategies, the layouts look like xxx
-c        
+c
 c            0D        1D        2D
 c 1:        xyz       xyz       xyz
 c 2:        xyz       xyz       yxz
@@ -78,7 +78,7 @@ static int zend[3];
 #define	T_FFTCOPY	6
 #define	T_MAX		7
 
-#define	TIMERS_ENABLED	FALSE
+#define	TIMERS_ENABLED	TRUE
 
 /* other stuff */
 
@@ -109,4 +109,3 @@ static dcomplex sums[NITER_DEFAULT+1]; /* sums(0:niter_default) */
 
 /* COMMON block: iter */
 static int niter;
-

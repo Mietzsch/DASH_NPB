@@ -9,7 +9,7 @@
 
 	STL version:
 	Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>
-	
+
 	CPP and OpenMP version:
 			Dalvan Griebler <dalvangriebler@gmail.com>
 			Júnior Löff <loffjh@gmail.com>
@@ -57,28 +57,28 @@ c FT benchmark
 c-------------------------------------------------------------------*/
 
 int main(int argc, char **argv) {
-	
+
 	/*c-------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	int i;
-	
+
 	/*------------------------------------------------------------------
-	c u0, u1, u2 are the main arrays in the problem. 
-	c Depending on the decomposition, these arrays will have different 
-	c dimensions. To accomodate all possibilities, we allocate them as 
-	c one-dimensional arrays and pass them to subroutines for different 
+	c u0, u1, u2 are the main arrays in the problem.
+	c Depending on the decomposition, these arrays will have different
+	c dimensions. To accomodate all possibilities, we allocate them as
+	c one-dimensional arrays and pass them to subroutines for different
 	c views
 	c  - u0 contains the initial (transformed) initial condition
 	c  - u1 and u2 are working arrays
 	c  - indexmap maps i,j,k of u0 to the correct i^2+j^2+k^2 for the
-	c  time evolution operator. 
+	c  time evolution operator.
 	c-----------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c Large arrays are in common so that they are allocated on the
 	c heap rather than the stack. This common block is not
-	c referenced directly anywhere else. Padding is to avoid accidental 
+	c referenced directly anywhere else. Padding is to avoid accidental
 	c cache problems, since all array sizes are powers of two.
 	c-------------------------------------------------------------------*/
 	static dcomplex u0[NZ][NY][NX];
@@ -88,7 +88,7 @@ int main(int argc, char **argv) {
 	static dcomplex u2[NZ][NY][NX];
 	/*static dcomplex pad3[3];*/
 	static int indexmap[NZ][NY][NX];
-	
+
 	int num_workers;
 	if(const char * nw = std::getenv("TBB_NUM_THREADS")) {
 		num_workers = atoi(nw);
@@ -96,102 +96,102 @@ int main(int argc, char **argv) {
 		num_workers = 1;
 	}
 	int nthreads = num_workers;
-	
+
 	tbb::task_scheduler_init init(num_workers);
-	
+
 	int iter;
 	double total_time, mflops;
 	boolean verified;
 	char class_npb;
-	
+
 	/*--------------------------------------------------------------------
-	c Run the entire problem once to make sure all data is touched. 
-	c This reduces variable startup costs, which is important for such a 
-	c short benchmark. The other NPB 2 implementations are similar. 
+	c Run the entire problem once to make sure all data is touched.
+	c This reduces variable startup costs, which is important for such a
+	c short benchmark. The other NPB 2 implementations are similar.
 	c-------------------------------------------------------------------*/
 	for (i = 0; i < T_MAX+1; i++) {
 		timer_clear(i);
 	}
 	setup();
-	
+
 	compute_indexmap(indexmap);
 	compute_initial_conditions(u1);
 	fft_init (dims[0][0]);
-	
-	
+
+
 	fft(1, u1, u0);
-	
-	
+
+
 	/*--------------------------------------------------------------------
 	c Start over from the beginning. Note that all operations must
-	c be timed, in contrast to other benchmarks. 
+	c be timed, in contrast to other benchmarks.
 	c-------------------------------------------------------------------*/
 	for (i = 0; i < T_MAX+1; i++) {
 		timer_clear(i);
 	}
-	
+
 	//std::clear();
-	
+
 	timer_start(T_TOTAL);
 	if (TIMERS_ENABLED == TRUE) timer_start(T_SETUP);
-	
+
 	compute_indexmap(indexmap);
-	
+
 	compute_initial_conditions(u1);
-	
+
 	fft_init (dims[0][0]);
-	
-	
+
+
 	if (TIMERS_ENABLED == TRUE) {
 		timer_stop(T_SETUP);
 	}
 	if (TIMERS_ENABLED == TRUE) {
 		timer_start(T_FFT);
 	}
-	
+
 	fft(1, u1, u0);
-	
-	if (TIMERS_ENABLED == TRUE) {  
+
+	if (TIMERS_ENABLED == TRUE) {
 		timer_stop(T_FFT);
 	}
-	
+
 	for (iter = 1; iter <= niter; iter++) {
 		if (TIMERS_ENABLED == TRUE) {
 			timer_start(T_EVOLVE);
 		}
-		
+
 		evolve(u0, u1, iter, indexmap);
-		
-		if (TIMERS_ENABLED == TRUE) { 
+
+		if (TIMERS_ENABLED == TRUE) {
 			timer_stop(T_EVOLVE);
 		}
-		if (TIMERS_ENABLED == TRUE) {  
+		if (TIMERS_ENABLED == TRUE) {
 			timer_start(T_FFT);
 		}
-		
+
 		fft(-1, u1, u2);
-		
-		if (TIMERS_ENABLED == TRUE) { 
+
+		if (TIMERS_ENABLED == TRUE) {
 			timer_stop(T_FFT);
 		}
 		if (TIMERS_ENABLED == TRUE) {
 			timer_start(T_CHECKSUM);
 		}
-		
+
 		checksum(iter, u2);
-		
+
 		if (TIMERS_ENABLED == TRUE) {
 			timer_stop(T_CHECKSUM);
 		}
 	}
-	
+
 	verify(NX, NY, NZ, niter, &verified, &class_npb);
-	
-	
+
+
 	timer_stop(T_TOTAL);
-	
+
 	total_time = timer_read(T_TOTAL);
-	
+
 	if( total_time != 0.0) {
 		mflops = 1.0e-6*(double)(NTOTAL) *
 		(14.8157+7.19641*log((double)(NTOTAL))
@@ -199,10 +199,10 @@ int main(int argc, char **argv) {
 	} else {
 		mflops = 0.0;
 	}
-	c_print_results((char*)"FT", class_npb, NX, NY, NZ, niter, nthreads, total_time, mflops, (char*)"		  floating point", verified, 
+	c_print_results((char*)"FT", class_npb, NX, NY, NZ, niter, nthreads, total_time, mflops, (char*)"		  floating point", verified,
 	(char*)NPBVERSION, (char*)COMPILETIME, (char*)CS1, (char*)CS2, (char*)CS3, (char*)CS4, (char*)CS5, (char*)CS6, (char*)CS7);
 	if (TIMERS_ENABLED == TRUE) print_timers();
-	
+
 	//printf("\n mystl statistics:\n");
 	//std::dump();
 
@@ -213,19 +213,19 @@ int main(int argc, char **argv) {
 c-------------------------------------------------------------------*/
 
 static void evolve(dcomplex u0[NZ][NY][NX], dcomplex u1[NZ][NY][NX], int t, int indexmap[NZ][NY][NX]) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c evolve u0 -> u1 (t time steps) in fourier space
 	c-------------------------------------------------------------------*/
-	
+
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
-	
+
 	int v[dims[0][2]];
 	std::iota(&v[0], &v[dims[0][2]], 0);
-	
+
 	std::for_each(pstl::execution::par, &v[0], &v[dims[0][2]], [&u0, &u1 , &t, &indexmap] (int k) {
 		for (int j = 0; j < dims[0][1]; j++) {
 			for (int i = 0; i < NX; i++) {
@@ -240,20 +240,20 @@ static void evolve(dcomplex u0[NZ][NY][NX], dcomplex u1[NZ][NY][NX], int t, int 
 c-------------------------------------------------------------------*/
 
 static void compute_initial_conditions(dcomplex u0[NZ][NY][NX]) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
-	c Fill in array u0 with initial conditions from 
-	c random number generator 
+	c Fill in array u0 with initial conditions from
+	c random number generator
 	c-------------------------------------------------------------------*/
-	
+
 	/*double x0, start, an, dummy;*/
 	double start, an;
 	//double tmp[NX*2*MAXDIM+1];
 	double starts[NZ];
-	
+
 	start = SEED;
 	/*--------------------------------------------------------------------
 	c Jump to the starting element for our first plane.
@@ -261,29 +261,29 @@ static void compute_initial_conditions(dcomplex u0[NZ][NY][NX]) {
 	ipow46(A, (zstart[0]-1)*2*NX*NY + (ystart[0]-1)*2*NX, &an);
 	/*dummy = */randlc(&start, an);
 	ipow46(A, 2*NX*NY, &an);
-	
+
 	starts[0] = start;
 	for(int i=1; i<dims[0][2]; i++){
 		randlc(&start, an);
 		starts[i] = start;
 	}
-	
+
 	/*--------------------------------------------------------------------
 	c Go through by z planes filling in one square at a time.
 	c-------------------------------------------------------------------*/
-	
+
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
-	
+
 	int v[dims[0][2]];
 	std::iota(&v[0], &v[dims[0][2]], 0);
-	
+
 	std::for_each(pstl::execution::par, &v[0], &v[dims[0][2]], [&u0, &starts] (int k)
 	{
 		double * tmp = new double[NX*2*MAXDIM+1];
-		
+
 		double x0 = starts[k];
 		vranlc(2*NX*dims[0][1], &x0, A, tmp);
-		
+
 		int t = 1;
 		for (int j = 0; j < dims[0][1]; j++) {
 			for (int i = 0; i < NX; i++) {
@@ -300,18 +300,18 @@ static void compute_initial_conditions(dcomplex u0[NZ][NY][NX]) {
 c-------------------------------------------------------------------*/
 
 static void ipow46(double a, int exponent, double *result) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c compute a^exponent mod 2^46
 	c-------------------------------------------------------------------*/
-	
+
 	/*double dummy, q, r;*/
 	double q, r;
 	int n, n2;
-	
+
 	/*--------------------------------------------------------------------
 	c Use
 	c   a^n = a^(n/2)*a^(n/2) if n even else
@@ -322,7 +322,7 @@ static void ipow46(double a, int exponent, double *result) {
 	q = a;
 	r = 1;
 	n = exponent;
-	
+
 	while (n > 1) {
 		n2 = n/2;
 		if (n2 * 2 == n) {
@@ -341,34 +341,34 @@ static void ipow46(double a, int exponent, double *result) {
 c-------------------------------------------------------------------*/
 
 static void setup(void) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*int ierr, i, j, fstatus;*/
 	int i;
-	
+
 	printf("\n\n NAS Parallel Benchmarks 4.0 OpenMP C++STL_array version" " - FT Benchmark\n\n");
 	printf("\n\n Developed by: Dalvan Griebler <dalvan.griebler@acad.pucrs.br>\n");
 	printf("\n\n STL version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
-	
+
 	niter = NITER_DEFAULT;
-	
+
 	printf(" Size				: %3dx%3dx%3d\n", NX, NY, NZ);
 	printf(" Iterations		  :	 %7d\n", niter);
-	
+
 	/* 1004 format(' Number of processes :	 ', i7)
 	1005 format(' Processor array	 :	 ', i3, 'x', i3)
 	1006 format(' WARNING: compiled for ', i5, ' processes. ',
 	>	   ' Will not verify. ')*/
-	
+
 	for (i = 0;i < 3 ; i++) {
 		dims[i][0] = NX;
 		dims[i][1] = NY;
 		dims[i][2] = NZ;
 	}
-	
-	
+
+
 	for (i = 0; i < 3; i++) {
 		xstart[i] = 1;
 		xend[i]   = NX;
@@ -377,25 +377,25 @@ static void setup(void) {
 		zstart[i] = 1;
 		zend[i]   = NZ;
 	}
-	
+
 	/*--------------------------------------------------------------------
 	c Set up info for blocking of ffts and transposes.  This improves
 	c performance on cache-based systems. Blocking involves
 	c working on a chunk of the problem at a time, taking chunks
-	c along the first, second, or third dimension. 
+	c along the first, second, or third dimension.
 	c
 	c - In cffts1 blocking is on 2nd dimension (with fft on 1st dim)
 	c - In cffts2/3 blocking is on 1st dimension (with fft on 2nd and 3rd dims)
 	c
-	c Since 1st dim is always in processor, we'll assume it's long enough 
+	c Since 1st dim is always in processor, we'll assume it's long enough
 	c (default blocking factor is 16 so min size for 1st dim is 16)
-	c The only case we have to worry about is cffts1 in a 2d decomposition. 
-	c so the blocking factor should not be larger than the 2nd dimension. 
+	c The only case we have to worry about is cffts1 in a 2d decomposition.
+	c so the blocking factor should not be larger than the 2nd dimension.
 	c-------------------------------------------------------------------*/
-	
+
 	fftblock = FFTBLOCK_DEFAULT;
 	fftblockpad = FFTBLOCKPAD_DEFAULT;
-	
+
 	if (fftblock != FFTBLOCK_DEFAULT) fftblockpad = fftblock+3;
 }
 
@@ -403,32 +403,32 @@ static void setup(void) {
 c-------------------------------------------------------------------*/
 
 static void compute_indexmap(int indexmap[NZ][NY][NX]) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
-	c compute function from local (i,j,k) to ibar^2+jbar^2+kbar^2 
-	c for time evolution exponent. 
+	c compute function from local (i,j,k) to ibar^2+jbar^2+kbar^2
+	c for time evolution exponent.
 	c-------------------------------------------------------------------*/
-	
+
 	int i;
 	double ap;
-	
+
 	/*--------------------------------------------------------------------
-	c basically we want to convert the fortran indices 
-	c   1 2 3 4 5 6 7 8 
-	c to 
+	c basically we want to convert the fortran indices
+	c   1 2 3 4 5 6 7 8
+	c to
 	c   0 1 2 3 -4 -3 -2 -1
 	c The following magic formula does the trick:
 	c mod(i-1+n/2, n) - n/2
 	c-------------------------------------------------------------------*/
-	
+
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
-	
+
 	int v[dims[2][0]];
 	std::iota(&v[0], &v[dims[2][0]], 0);
-	
+
 	std::for_each(pstl::execution::par, &v[0], &v[dims[2][0]], [&indexmap](int i)
 	{
 		int ii =  (i+1+xstart[2]-2+NX/2)%NX - NX/2;
@@ -442,14 +442,14 @@ static void compute_indexmap(int indexmap[NZ][NY][NX]) {
 			}
 		}
 	});//, "compute indexmaps");
-	
+
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
-	
+
 	/*--------------------------------------------------------------------
-	c compute array of exponentials for time evolution. 
+	c compute array of exponentials for time evolution.
 	c-------------------------------------------------------------------*/
 	ap = - 4.0 * ALPHA * PI * PI;
-	
+
 	ex[0] = 1.0;
 	ex[1] = exp(ap);
 	for (i = 2; i <= EXPMAX; i++) {
@@ -461,20 +461,20 @@ static void compute_indexmap(int indexmap[NZ][NY][NX]) {
 c-------------------------------------------------------------------*/
 
 static void print_timers(void) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	int i;
 	const char *tstrings[] = { "		  total ",
-	"		  setup ", 
-	"			fft ", 
-	"		 evolve ", 
-	"	   checksum ", 
-	"		 fftlow ", 
+	"		  setup ",
+	"			fft ",
+	"		 evolve ",
+	"	   checksum ",
+	"		 fftlow ",
 	"		fftcopy ",
 	"	   STL time "};
-	
+
 	for (i = 0; i < T_MAX+1; i++) {
 		if (timer_read(i) != 0.0) {
 			printf("timer %2d(%16s) :%10.6f\n", i, tstrings[i], timer_read(i));
@@ -486,17 +486,17 @@ static void print_timers(void) {
 c-------------------------------------------------------------------*/
 
 static void fft(int dir, dcomplex x1[NZ][NY][NX], dcomplex x2[NZ][NY][NX]) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c note: args x1, x2 must be different arrays
 	c note: args for cfftsx are (direction, layout, xin, xout, scratch)
 	c	   xin/xout may be the same and it can be somewhat faster
 	c	   if they are
 	c-------------------------------------------------------------------*/
-	
+
 	if (dir == 1) {
 		cffts1(1, dims[0], x1, x1);/* x1 -> x1 */
 		cffts2(1, dims[1], x1, x1);/* x1 -> x1 */
@@ -512,26 +512,26 @@ static void fft(int dir, dcomplex x1[NZ][NY][NX], dcomplex x2[NZ][NY][NX]) {
 c-------------------------------------------------------------------*/
 
 static void cffts1(int is, int d[3], dcomplex x[NZ][NY][NX], dcomplex xout[NZ][NY][NX]) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	int logd[3];
-	
+
 	for (int i = 0; i < 3; i++) {
 		logd[i] = ilog2(d[i]);
 	}
-	
+
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
-	
+
 	int v[d[2]];
 	std::iota(&v[0], &v[d[2]], 0);
-	
+
 	std::for_each(pstl::execution::par, &v[0], &v[d[2]], [&is, &d, &logd, &x, &xout](int k)
 	{
 		dcomplex y0[NX][FFTBLOCKPAD];
 		dcomplex y1[NX][FFTBLOCKPAD];
-		
+
 		for (int jj = 0; jj <= d[1] - fftblock; jj+=fftblock) {
 				//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 				for (int j = 0; j < fftblock; j++) {
@@ -561,26 +561,26 @@ static void cffts1(int is, int d[3], dcomplex x[NZ][NY][NX], dcomplex xout[NZ][N
 c-------------------------------------------------------------------*/
 
 static void cffts2(int is, int d[3], dcomplex x[NZ][NY][NX],dcomplex xout[NZ][NY][NX]) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	int logd[3];
-	
+
 	for (int i = 0; i < 3; i++) {
 		logd[i] = ilog2(d[i]);
 	}
-	
+
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
-	
+
 	int v[d[2]];
 	std::iota(&v[0], &v[d[2]], 0);
-	
+
 	std::for_each(pstl::execution::par, &v[0], &v[d[2]], [&is, &d, &logd, &x, &xout](int k)
 	{
 		dcomplex y0[NX][FFTBLOCKPAD];
 		dcomplex y1[NX][FFTBLOCKPAD];
-		
+
 		for (int ii = 0; ii <= d[0] - fftblock; ii+=fftblock) {
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 			for (int j = 0; j < d[1]; j++) {
@@ -610,26 +610,26 @@ static void cffts2(int is, int d[3], dcomplex x[NZ][NY][NX],dcomplex xout[NZ][NY
 c-------------------------------------------------------------------*/
 
 static void cffts3(int is, int d[3], dcomplex x[NZ][NY][NX],dcomplex xout[NZ][NY][NX]) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	int logd[3];
-	
+
 	for (int i = 0;i < 3; i++) {
 		logd[i] = ilog2(d[i]);
 	}
-	
+
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
-	
+
 	int v[d[1]];
 	std::iota(&v[0], &v[d[1]], 0);
-	
+
 	std::for_each(pstl::execution::par, &v[0], &v[d[1]], [&is, &d, &logd, &x, &xout](int j)
 	{
 		dcomplex y0[NX][FFTBLOCKPAD];
 		dcomplex y1[NX][FFTBLOCKPAD];
-		
+
 		for (int ii = 0; ii <= d[0] - fftblock; ii+=fftblock) {
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 			for (int k = 0; k < d[2]; k++) {
@@ -638,7 +638,7 @@ static void cffts3(int is, int d[3], dcomplex x[NZ][NY][NX],dcomplex xout[NZ][NY
 					y0[k][i].imag = x[k][j][i+ii].imag;
 				}
 			}
-			
+
 			//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTLOW);
 			cfftz (is, logd[2], d[2], y0, y1);
@@ -660,19 +660,19 @@ static void cffts3(int is, int d[3], dcomplex x[NZ][NY][NX],dcomplex xout[NZ][NY
 c-------------------------------------------------------------------*/
 
 static void fft_init (int n) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
-	c compute the roots-of-unity array that will be used for subsequent FFTs. 
+	c compute the roots-of-unity array that will be used for subsequent FFTs.
 	c-------------------------------------------------------------------*/
-	
+
 	/*int m,nu,ku,i,j,ln;*/
 	int m,ku,i,j,ln;
 	double t, ti;
-	
-	
+
+
 	/*--------------------------------------------------------------------
 	c   Initialize the U array with sines and cosines in a manner that permits
 	c   stride one access at each FFT iteration.
@@ -683,16 +683,16 @@ static void fft_init (int n) {
 	u[0].imag = 0.0;
 	ku = 1;
 	ln = 1;
-	
+
 	for (j = 1; j <= m; j++) {
 		t = PI / ln;
-		
+
 		for (i = 0; i <= ln - 1; i++) {
 			ti = i * t;
 			u[i+ku].real = cos(ti);
 			u[i+ku].imag = sin(ti);
 		}
-		
+
 		ku = ku + ln;
 		ln = 2 * ln;
 	}
@@ -702,21 +702,21 @@ static void fft_init (int n) {
 c-------------------------------------------------------------------*/
 
 static void cfftz (int is, int m, int n, dcomplex x[NX][FFTBLOCKPAD], dcomplex y[NX][FFTBLOCKPAD]) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c   Computes NY N-point complex-to-complex FFTs of X using an algorithm due
-	c   to Swarztrauber.  X is both the input and the output array, while Y is a 
-	c   scratch array.  It is assumed that N = 2^M.  Before calling CFFTZ to 
-	c   perform FFTs, the array U must be initialized by calling CFFTZ with IS 
-	c   set to 0 and M set to MX, where MX is the maximum value of M for any 
+	c   to Swarztrauber.  X is both the input and the output array, while Y is a
+	c   scratch array.  It is assumed that N = 2^M.  Before calling CFFTZ to
+	c   perform FFTs, the array U must be initialized by calling CFFTZ with IS
+	c   set to 0 and M set to MX, where MX is the maximum value of M for any
 	c   subsequent call.
 	c-------------------------------------------------------------------*/
-	
+
 	int i,j,l,mx;
-	
+
 	/*--------------------------------------------------------------------
 	c   Check if input parameters are invalid.
 	c-------------------------------------------------------------------*/
@@ -727,7 +727,7 @@ static void cfftz (int is, int m, int n, dcomplex x[NX][FFTBLOCKPAD], dcomplex y
 		is, m, mx);
 		exit(1);
 	}
-	
+
 	/*--------------------------------------------------------------------
 	c   Perform one variant of the Stockham FFT.
 	c-------------------------------------------------------------------*/
@@ -736,7 +736,7 @@ static void cfftz (int is, int m, int n, dcomplex x[NX][FFTBLOCKPAD], dcomplex y
 		if (l == m) break;
 		fftz2 (is, l + 1, m, n, fftblock, fftblockpad, u, y, x);
 	}
-	
+
 	/*--------------------------------------------------------------------
 	c   Copy Y to X.
 	c-------------------------------------------------------------------*/
@@ -754,22 +754,22 @@ static void cfftz (int is, int m, int n, dcomplex x[NX][FFTBLOCKPAD], dcomplex y
 c-------------------------------------------------------------------*/
 
 static void fftz2 (int is, int l, int m, int n, int ny, int ny1, dcomplex u[NX], dcomplex x[NX][FFTBLOCKPAD], dcomplex y[NX][FFTBLOCKPAD]) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c   Performs the L-th iteration of the second variant of the Stockham FFT.
 	c-------------------------------------------------------------------*/
-	
+
 	int k,n1,li,lj,lk,ku,i,j,i11,i12,i21,i22;
 	/*dcomplex u1,x11,x21;*/
 	dcomplex u1;
-	
+
 	/*--------------------------------------------------------------------
 	c   Set initial parameters.
 	c-------------------------------------------------------------------*/
-	
+
 	n1 = n / 2;
 	if (l-1 == 0) {
 		lk = 1;
@@ -783,9 +783,9 @@ static void fftz2 (int is, int l, int m, int n, int ny, int ny1, dcomplex u[NX],
 	}
 	lj = 2 * lk;
 	ku = li;
-	
+
 	for (i = 0; i < li; i++) {
-		
+
 		i11 = i * lk;
 		i12 = i11 + n1;
 		i21 = i * lj;
@@ -797,7 +797,7 @@ static void fftz2 (int is, int l, int m, int n, int ny, int ny1, dcomplex u[NX],
 			u1.real = u[ku+i].real;
 			u1.imag = -u[ku+i].imag;
 		}
-		
+
 		/*--------------------------------------------------------------------
 		c   This loop is vectorizable.
 		c-------------------------------------------------------------------*/
@@ -805,7 +805,7 @@ static void fftz2 (int is, int l, int m, int n, int ny, int ny1, dcomplex u[NX],
 		/*
 		std::vector<int> v(lk);
 		std::iota(v.begin(), v.end(), 0);
-		
+
 		std::for_each(pstl::execution::par, v.begin(), v.end(), [&i11, &i12, &i21, &i22, &x, &y, &u1](int k)
 		{
 			for (int j = 0; j < ny; j++) {
@@ -824,7 +824,7 @@ static void fftz2 (int is, int l, int m, int n, int ny, int ny1, dcomplex u[NX],
 			}
 		});
 		*/
-		
+
 		for (k = 0; k < lk; k++) {
 			for (j = 0; j < ny; j++) {
 				double x11real, x11imag;
@@ -848,12 +848,12 @@ static void fftz2 (int is, int l, int m, int n, int ny, int ny1, dcomplex u[NX],
 c-------------------------------------------------------------------*/
 
 static int ilog2(int n) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	int nn, lg;
-	
+
 	if (n == 1) {
 		return 0;
 	}
@@ -863,7 +863,7 @@ static int ilog2(int n) {
 		nn = nn << 1;
 		lg++;
 	}
-	
+
 	return lg;
 }
 
@@ -871,26 +871,26 @@ static int ilog2(int n) {
 c-------------------------------------------------------------------*/
 
 static void checksum(int i, dcomplex u1[NZ][NY][NX]) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 	/*int j, q,r,s, ierr;*/
 	/*dcomplex chk,allchk;*/
 	dcomplex chk;
-	
+
 	chk.real = 0.0;
 	chk.imag = 0.0;
-	
+
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
-	
+
 	int v[1024];
 	std::iota(&v[0], &v[1024], 1);
-	
-	chk = std::transform_reduce(pstl::execution::par, &v[0], &v[1024], chk, 
+
+	chk = std::transform_reduce(pstl::execution::par, &v[0], &v[1024], chk,
 	[](dcomplex total_chk, dcomplex temp_chk) -> dcomplex{
 			total_chk.real += temp_chk.real;
 			total_chk.imag += temp_chk.imag;
-			
+
 			return total_chk;
 	},
 	[chk, &u1](int j) -> dcomplex{
@@ -906,17 +906,17 @@ static void checksum(int i, dcomplex u1[NZ][NY][NX]) {
 			}
 		return chk;
 	});
-	
+
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
-	
+
 	sums[i].real += chk.real;
 	sums[i].imag += chk.imag;
-	
-	   
+
+
 	/* complex % real */
 	sums[i].real = sums[i].real/(double)(NTOTAL);
 	sums[i].imag = sums[i].imag/(double)(NTOTAL);
-	
+
 	printf("T = %5d	 Checksum = %22.12e %22.12e\n",
 	i, sums[i].real, sums[i].imag);
 }
@@ -925,18 +925,18 @@ static void checksum(int i, dcomplex u1[NZ][NY][NX]) {
 c-------------------------------------------------------------------*/
 
 static void verify (int d1, int d2, int d3, int nt, boolean *verified, char *class_npb) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*int ierr, size, i;*/
 	int i;
 	double err, epsilon;
-	
+
 	/*--------------------------------------------------------------------
 	c   Sample size reference checksums
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c   class_npb S size reference checksums
 	c-------------------------------------------------------------------*/
@@ -967,8 +967,8 @@ static void verify (int d1, int d2, int d3, int nt, boolean *verified, char *cla
 	double vdata_imag_w[6+1] = { 0.0,
 				 5.293246849175e+02,
 				 5.282149986629e+02,
-				 5.270996558037e+02, 
-				 5.260027904925e+02, 
+				 5.270996558037e+02,
+				 5.260027904925e+02,
 				 5.249400845633e+02,
 				 5.239212247086e+02 };
 	/*--------------------------------------------------------------------
@@ -1078,11 +1078,11 @@ static void verify (int d1, int d2, int d3, int nt, boolean *verified, char *cla
 				  5.123399592211e+02,
 				  5.123435588985e+02,
 				  5.123465164008e+02 };
-	
+
 	epsilon = 1.0e-12;
 	*verified = TRUE;
 	*class_npb = 'U';
-	
+
 	if (d1 == 64 &&
 	d2 == 64 &&
 	d3 == 64 &&
@@ -1166,7 +1166,7 @@ static void verify (int d1, int d2, int d3, int nt, boolean *verified, char *cla
 			}
 		}
 	}
-	
+
 	if (*class_npb != 'U') {
 		printf("Result verification successful\n");
 	} else {
@@ -1174,4 +1174,3 @@ static void verify (int d1, int d2, int d3, int nt, boolean *verified, char *cla
 	}
 	printf("class_npb = %1c\n", *class_npb);
 }
-
