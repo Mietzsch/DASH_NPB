@@ -18,13 +18,8 @@
 
 #include <libdash.h>
 
-#include <vector>
-#include <numeric>
-
 #include <iostream>
 #include "npb-CPP.hpp"
-
-//#include "../common/mystl.h"
 
 /* global variables */
 #include "global.hpp"
@@ -246,7 +241,6 @@ static void evolve(dash::NArray<dcomplex, 3> &u0, dash::NArray<dcomplex, 3> &u1,
 c-------------------------------------------------------------------*/
 
 static void compute_initial_conditions(dash::NArray<dcomplex, 3> &u0) {
-// if(0 == dash::myid()) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -258,7 +252,6 @@ static void compute_initial_conditions(dash::NArray<dcomplex, 3> &u0) {
 	/*double x0, start, an, dummy;*/
 	double start, an;
 	//double tmp[NX*2*MAXDIM+1];
-	// double starts[NZ];
 	dash::Array<double> starts(NZ*dash::size());
 
 	start = SEED;
@@ -292,10 +285,6 @@ static void compute_initial_conditions(dash::NArray<dcomplex, 3> &u0) {
 		int t = 1;
 		for (int j = 0; j < dims[0][1]; j++) {
 			for (int i = 0; i < NX; i++) {
-				// dcomplex v0;
-				// v0.real = tmp[t++];
-				// v0.imag = tmp[t++];
-				// u0[k][j][i] = v0;
 				u0.local[k][j][i].real = tmp[t++];
 				u0.local[k][j][i].imag = tmp[t++];
 			}
@@ -303,7 +292,6 @@ static void compute_initial_conditions(dash::NArray<dcomplex, 3> &u0) {
 		}
 	}
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
-// }
 }
 
 /*--------------------------------------------------------------------
@@ -483,8 +471,8 @@ static void print_timers(void) {
 	"      fft ",
 	"   evolve ",
 	" checksum ",
-	" fftlow ",
-	" fftcopy "};
+	"   fftlow ",
+	"  fftcopy "};
 
 	for (i = 0; i < T_MAX; i++) {
 		if (timer_read(i) != 0.0) {
