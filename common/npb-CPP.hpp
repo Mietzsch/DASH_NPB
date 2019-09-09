@@ -20,8 +20,22 @@ typedef struct { double real; double imag; } dcomplex;
 #define cadd(c,a,b) (c.real = a.real + b.real, c.imag = a.imag + b.imag)
 #define csub(c,a,b) (c.real = a.real - b.real, c.imag = a.imag - b.imag)
 #define cmul(c,a,b) (c.real = a.real * b.real - a.imag * b.imag, \
-                     c.imag = a.real * b.imag + a.imag * b.real)
+                    c.imag = a.real * b.imag + a.imag * b.real)
 #define crmul(c,a,b) (c.real = a.real * b, c.imag = a.imag * b)
+
+dcomplex cmulret(dcomplex a, dcomplex b) {
+  dcomplex res;
+  res.real = a.real * b.real - a.imag * b.imag;
+  res.imag = a.real * b.imag + a.imag * b.real;
+  return res;
+}
+
+dcomplex crmulret(dcomplex a, double b) {
+  dcomplex res;
+  res.real = a.real * b;
+  res.imag = a.imag * b;
+  return res;
+}
 
 extern double randlc(double *, double);
 extern void vranlc(int, double *, double, double *);

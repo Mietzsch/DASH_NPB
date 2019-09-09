@@ -29,25 +29,27 @@
 #include <iostream>
 #include "npb-CPP.hpp"
 
+//#include "../common/mystl.h"
+
 /* global variables */
 #include "global.hpp"
 
 /* function declarations */
-static void evolve(std::vector<std::vector<std::vector<dcomplex> > > &u0, std::vector<std::vector<std::vector<dcomplex> > > &u1, int t, std::vector<std::vector<std::vector<int> > > &indexmap);
-static void compute_initial_conditions(std::vector<std::vector<std::vector<dcomplex> > > &u0);
+static void evolve(dcomplex u0[NZ][NY][NX], dcomplex u1[NZ][NY][NX], int t, int indexmap[NZ][NY][NX]);
+static void compute_initial_conditions(dcomplex u0[NZ][NY][NX]);
 static void ipow46(double a, int exponent, double *result);
 static void setup(void);
-static void compute_indexmap(std::vector<std::vector<std::vector<int> > > &indexmap);
+static void compute_indexmap(int indexmap[NZ][NY][NX]);
 static void print_timers(void);
-static void fft(int dir, std::vector<std::vector<std::vector<dcomplex> > > &x1, std::vector<std::vector<std::vector<dcomplex> > > &x2);
-static void cffts1(int is, int d[3], std::vector<std::vector<std::vector<dcomplex> > > &x, std::vector<std::vector<std::vector<dcomplex> > > &xout);
-static void cffts2(int is, int d[3], std::vector<std::vector<std::vector<dcomplex> > > &x, std::vector<std::vector<std::vector<dcomplex> > > &xout);
-static void cffts3(int is, int d[3], std::vector<std::vector<std::vector<dcomplex> > > &x, std::vector<std::vector<std::vector<dcomplex> > > &xout);
+static void fft(int dir, dcomplex x1[NZ][NY][NX], dcomplex x2[NZ][NY][NX]);
+static void cffts1(int is, int d[3], dcomplex x[NZ][NY][NX], dcomplex xout[NZ][NY][NX]);
+static void cffts2(int is, int d[3], dcomplex x[NZ][NY][NX], dcomplex xout[NZ][NY][NX]);
+static void cffts3(int is, int d[3], dcomplex x[NZ][NY][NX], dcomplex xout[NZ][NY][NX]);
 static void fft_init (int n);
 static void cfftz (int is, int m, int n, dcomplex x[NX][FFTBLOCKPAD], dcomplex y[NX][FFTBLOCKPAD]);
 static void fftz2 (int is, int l, int m, int n, int ny, int ny1, dcomplex u[NX], dcomplex x[NX][FFTBLOCKPAD], dcomplex y[NX][FFTBLOCKPAD]);
 static int ilog2(int n);
-static void checksum(int i, std::vector<std::vector<std::vector<dcomplex> > > &u1);
+static void checksum(int i, dcomplex u1[NZ][NY][NX]);
 static void verify (int d1, int d2, int d3, int nt, boolean *verified, char *class_npb);
 
 /*--------------------------------------------------------------------
@@ -79,13 +81,13 @@ int main(int argc, char **argv) {
 	c referenced directly anywhere else. Padding is to avoid accidental 
 	c cache problems, since all array sizes are powers of two.
 	c-------------------------------------------------------------------*/
-	static std::vector<std::vector<std::vector<dcomplex> > > u0 (NZ, std::vector<std::vector<dcomplex> > (NY, std::vector<dcomplex> (NX)));
+	static dcomplex u0[NZ][NY][NX];
 	/*static dcomplex pad1[3];*/
-	static std::vector<std::vector<std::vector<dcomplex> > > u1 (NZ, std::vector<std::vector<dcomplex> > (NY, std::vector<dcomplex> (NX)));
+	static dcomplex u1[NZ][NY][NX];
 	/*static dcomplex pad2[3];*/
-	static std::vector<std::vector<std::vector<dcomplex> > > u2 (NZ, std::vector<std::vector<dcomplex> > (NY, std::vector<dcomplex> (NX)));
+	static dcomplex u2[NZ][NY][NX];
 	/*static dcomplex pad3[3];*/
-	static std::vector<std::vector<std::vector<int> > > indexmap (NZ, std::vector<std::vector<int> > (NY, std::vector<int> (NX)));
+	static int indexmap[NZ][NY][NX];
 	
 	int num_workers;
 	if(const char * nw = std::getenv("TBB_NUM_THREADS")) {
@@ -127,6 +129,8 @@ int main(int argc, char **argv) {
 	for (i = 0; i < T_MAX+1; i++) {
 		timer_clear(i);
 	}
+	
+	//std::clear();
 	
 	timer_start(T_TOTAL);
 	if (TIMERS_ENABLED == TRUE) timer_start(T_SETUP);
@@ -199,13 +203,16 @@ int main(int argc, char **argv) {
 	(char*)NPBVERSION, (char*)COMPILETIME, (char*)CS1, (char*)CS2, (char*)CS3, (char*)CS4, (char*)CS5, (char*)CS6, (char*)CS7);
 	if (TIMERS_ENABLED == TRUE) print_timers();
 	
+	//printf("\n mystl statistics:\n");
+	//std::dump();
+
 	return 0;
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void evolve(std::vector<std::vector<std::vector<dcomplex> > > &u0, std::vector<std::vector<std::vector<dcomplex> > > &u1, int t, std::vector<std::vector<std::vector<int> > > &indexmap) {
+static void evolve(dcomplex u0[NZ][NY][NX], dcomplex u1[NZ][NY][NX], int t, int indexmap[NZ][NY][NX]) {
 	
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
@@ -216,24 +223,23 @@ static void evolve(std::vector<std::vector<std::vector<dcomplex> > > &u0, std::v
 	
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 	
-	std::vector<int> v(dims[0][2]);
-	std::iota(v.begin(), v.end(), 0);
+	int v[dims[0][2]];
+	std::iota(&v[0], &v[dims[0][2]], 0);
 	
-	std::for_each(pstl::execution::par, v.begin(), v.end(), [&u0, &u1 , &t, &indexmap] (int k) {
+	std::for_each(pstl::execution::par, &v[0], &v[dims[0][2]], [&u0, &u1 , &t, &indexmap] (int k) {
 		for (int j = 0; j < dims[0][1]; j++) {
 			for (int i = 0; i < NX; i++) {
 				crmul(u1[k][j][i], u0[k][j][i], ex[t*indexmap[k][j][i]]);
 			}
 		}
-	});
-	
+	});//, "evolve");
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void compute_initial_conditions(std::vector<std::vector<std::vector<dcomplex> > > &u0) {
+static void compute_initial_conditions(dcomplex u0[NZ][NY][NX]) {
 	
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
@@ -265,12 +271,13 @@ static void compute_initial_conditions(std::vector<std::vector<std::vector<dcomp
 	/*--------------------------------------------------------------------
 	c Go through by z planes filling in one square at a time.
 	c-------------------------------------------------------------------*/
+	
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 	
-	std::vector<int> v(dims[0][2]);
-	std::iota(v.begin(), v.end(), 0);
+	int v[dims[0][2]];
+	std::iota(&v[0], &v[dims[0][2]], 0);
 	
-	std::for_each(pstl::execution::par, v.begin(), v. end(), [&u0, &starts] (int k)
+	std::for_each(pstl::execution::par, &v[0], &v[dims[0][2]], [&u0, &starts] (int k)
 	{
 		double * tmp = new double[NX*2*MAXDIM+1];
 		
@@ -285,7 +292,7 @@ static void compute_initial_conditions(std::vector<std::vector<std::vector<dcomp
 			}
 			//if (k != dims[0][2]) /*dummy = */randlc(&start, an);
 		}
-	});
+	});//, "compute initial conditions");
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
 }
 
@@ -341,7 +348,7 @@ static void setup(void) {
 	/*int ierr, i, j, fstatus;*/
 	int i;
 	
-	printf("\n\n NAS Parallel Benchmarks 4.0 OpenMP C++STL_vector version" " - FT Benchmark\n\n");
+	printf("\n\n NAS Parallel Benchmarks 4.0 OpenMP C++STL_array version" " - FT Benchmark\n\n");
 	printf("\n\n Developed by: Dalvan Griebler <dalvan.griebler@acad.pucrs.br>\n");
 	printf("\n\n STL version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
 	
@@ -376,7 +383,7 @@ static void setup(void) {
 	c performance on cache-based systems. Blocking involves
 	c working on a chunk of the problem at a time, taking chunks
 	c along the first, second, or third dimension. 
-	c 
+	c
 	c - In cffts1 blocking is on 2nd dimension (with fft on 1st dim)
 	c - In cffts2/3 blocking is on 1st dimension (with fft on 2nd and 3rd dims)
 	c
@@ -395,7 +402,7 @@ static void setup(void) {
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void compute_indexmap(std::vector<std::vector<std::vector<int> > > &indexmap) {
+static void compute_indexmap(int indexmap[NZ][NY][NX]) {
 	
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
@@ -419,10 +426,10 @@ static void compute_indexmap(std::vector<std::vector<std::vector<int> > > &index
 	
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 	
-	std::vector<int> v(dims[2][0]);
-	std::iota(v.begin(), v.end(), 0);
+	int v[dims[2][0]];
+	std::iota(&v[0], &v[dims[2][0]], 0);
 	
-	std::for_each(pstl::execution::par, v.begin(), v.end(), [&indexmap](int i)
+	std::for_each(pstl::execution::par, &v[0], &v[dims[2][0]], [&indexmap](int i)
 	{
 		int ii =  (i+1+xstart[2]-2+NX/2)%NX - NX/2;
 		int ii2 = ii*ii;
@@ -434,7 +441,7 @@ static void compute_indexmap(std::vector<std::vector<std::vector<int> > > &index
 				indexmap[k][j][i] = kk*kk+ij2;
 			}
 		}
-	});
+	});//, "compute indexmaps");
 	
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
 	
@@ -478,7 +485,7 @@ static void print_timers(void) {
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void fft(int dir, std::vector<std::vector<std::vector<dcomplex> > > &x1, std::vector<std::vector<std::vector<dcomplex> > > &x2) {
+static void fft(int dir, dcomplex x1[NZ][NY][NX], dcomplex x2[NZ][NY][NX]) {
 	
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
@@ -491,9 +498,9 @@ static void fft(int dir, std::vector<std::vector<std::vector<dcomplex> > > &x1, 
 	c-------------------------------------------------------------------*/
 	
 	if (dir == 1) {
-		cffts1(1, dims[0], x1, x1);	/* x1 -> x1 */
-		cffts2(1, dims[1], x1, x1);	/* x1 -> x1 */
-		cffts3(1, dims[2], x1, x2);	/* x1 -> x2 */
+		cffts1(1, dims[0], x1, x1);/* x1 -> x1 */
+		cffts2(1, dims[1], x1, x1);/* x1 -> x1 */
+		cffts3(1, dims[2], x1, x2);/* x1 -> x2 */
 	} else {
 		cffts3(-1, dims[2], x1, x1);/* x1 -> x1 */
 		cffts2(-1, dims[1], x1, x1);/* x1 -> x1 */
@@ -504,7 +511,7 @@ static void fft(int dir, std::vector<std::vector<std::vector<dcomplex> > > &x1, 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void cffts1(int is, int d[3], std::vector<std::vector<std::vector<dcomplex> > > &x, std::vector<std::vector<std::vector<dcomplex> > > &xout) {
+static void cffts1(int is, int d[3], dcomplex x[NZ][NY][NX], dcomplex xout[NZ][NY][NX]) {
 	
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
@@ -517,10 +524,10 @@ static void cffts1(int is, int d[3], std::vector<std::vector<std::vector<dcomple
 	
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 	
-	std::vector<int> v(d[2]);
-	std::iota(v.begin(), v.end(), 0);
+	int v[d[2]];
+	std::iota(&v[0], &v[d[2]], 0);
 	
-	std::for_each(pstl::execution::par, v.begin(), v.end(), [&is, &d, &logd, &x, &xout](int k)
+	std::for_each(pstl::execution::par, &v[0], &v[d[2]], [&is, &d, &logd, &x, &xout](int k)
 	{
 		dcomplex y0[NX][FFTBLOCKPAD];
 		dcomplex y1[NX][FFTBLOCKPAD];
@@ -546,15 +553,14 @@ static void cffts1(int is, int d[3], std::vector<std::vector<std::vector<dcomple
 				}
 			//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
 			}
-	});
-	
+	});//, "Fourier Transform");
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void cffts2(int is, int d[3], std::vector<std::vector<std::vector<dcomplex> > > &x, std::vector<std::vector<std::vector<dcomplex> > > &xout) {
+static void cffts2(int is, int d[3], dcomplex x[NZ][NY][NX],dcomplex xout[NZ][NY][NX]) {
 	
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
@@ -567,10 +573,10 @@ static void cffts2(int is, int d[3], std::vector<std::vector<std::vector<dcomple
 	
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 	
-	std::vector<int> v(d[2]);
-	std::iota(v.begin(), v.end(), 0);
+	int v[d[2]];
+	std::iota(&v[0], &v[d[2]], 0);
 	
-	std::for_each(pstl::execution::par, v.begin(), v.end(), [&is, &d, &logd, &x, &xout](int k)
+	std::for_each(pstl::execution::par, &v[0], &v[d[2]], [&is, &d, &logd, &x, &xout](int k)
 	{
 		dcomplex y0[NX][FFTBLOCKPAD];
 		dcomplex y1[NX][FFTBLOCKPAD];
@@ -590,20 +596,20 @@ static void cffts2(int is, int d[3], std::vector<std::vector<std::vector<dcomple
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 			for (int j = 0; j < d[1]; j++) {
 				for (int i = 0; i < fftblock; i++) {
-				xout[k][j][i+ii].real = y0[j][i].real;
-				xout[k][j][i+ii].imag = y0[j][i].imag;
+					xout[k][j][i+ii].real = y0[j][i].real;
+					xout[k][j][i+ii].imag = y0[j][i].imag;
 				}
 			}
 		//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
 		}
-	});
+	});//, "Fourier Transform");
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void cffts3(int is, int d[3], std::vector<std::vector<std::vector<dcomplex> > > &x, std::vector<std::vector<std::vector<dcomplex> > > &xout) {
+static void cffts3(int is, int d[3], dcomplex x[NZ][NY][NX],dcomplex xout[NZ][NY][NX]) {
 	
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
@@ -616,10 +622,10 @@ static void cffts3(int is, int d[3], std::vector<std::vector<std::vector<dcomple
 	
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 	
-	std::vector<int> v(d[1]);
-	std::iota(v.begin(), v.end(), 0);
+	int v[d[1]];
+	std::iota(&v[0], &v[d[1]], 0);
 	
-	std::for_each(pstl::execution::par, v.begin(), v.end(), [&is, &d, &logd, &x, &xout](int j)
+	std::for_each(pstl::execution::par, &v[0], &v[d[1]], [&is, &d, &logd, &x, &xout](int j)
 	{
 		dcomplex y0[NX][FFTBLOCKPAD];
 		dcomplex y1[NX][FFTBLOCKPAD];
@@ -646,7 +652,7 @@ static void cffts3(int is, int d[3], std::vector<std::vector<std::vector<dcomple
 			}
 		//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
 		}
-	});
+	});//, "Fourier Transform");
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
 }
 
@@ -864,7 +870,7 @@ static int ilog2(int n) {
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void checksum(int i, std::vector<std::vector<std::vector<dcomplex> > > &u1) {
+static void checksum(int i, dcomplex u1[NZ][NY][NX]) {
 	
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
@@ -877,10 +883,10 @@ static void checksum(int i, std::vector<std::vector<std::vector<dcomplex> > > &u
 	
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 	
-	std::vector<int> v(1024);
-	std::iota(v.begin(), v.end(), 1);
+	int v[1024];
+	std::iota(&v[0], &v[1024], 1);
 	
-	chk = std::transform_reduce(pstl::execution::par, v.begin(), v.end(), chk, 
+	chk = std::transform_reduce(pstl::execution::par, &v[0], &v[1024], chk, 
 	[](dcomplex total_chk, dcomplex temp_chk) -> dcomplex{
 			total_chk.real += temp_chk.real;
 			total_chk.imag += temp_chk.imag;
@@ -906,7 +912,7 @@ static void checksum(int i, std::vector<std::vector<std::vector<dcomplex> > > &u
 	sums[i].real += chk.real;
 	sums[i].imag += chk.imag;
 	
-	
+	   
 	/* complex % real */
 	sums[i].real = sums[i].real/(double)(NTOTAL);
 	sums[i].imag = sums[i].imag/(double)(NTOTAL);
@@ -1168,3 +1174,4 @@ static void verify (int d1, int d2, int d3, int nt, boolean *verified, char *cla
 	}
 	printf("class_npb = %1c\n", *class_npb);
 }
+
