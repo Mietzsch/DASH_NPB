@@ -601,7 +601,6 @@ static void cffts2(int is, int d[3], dash::NArray<dcomplex, 3> &x, dash::NArray<
 c-------------------------------------------------------------------*/
 
 static void cffts3(int is, int d[3], dash::NArray<dcomplex, 3> &x, dash::NArray<dcomplex, 3> &xout) {
-// if(0 == dash::myid()) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -613,16 +612,10 @@ static void cffts3(int is, int d[3], dash::NArray<dcomplex, 3> &x, dash::NArray<
 
 	if (TIMERS_ENABLED == TRUE) timer_start(T_MAX);
 
-	// int v[d[1]];
-	// std::iota(&v[0], &v[d[1]], 0);
 	int yplanes_per_unit = ceil((double) d[1] / dash::size()); //this is effectively a blocked pattern. It could be better to use cyclic for higher unit counts.
 	int myoffset = dash::myid()*yplanes_per_unit;
 
-	// for(int j = 0; j < d[1]; j++) {
 	for(int j = 0; j < yplanes_per_unit && myoffset+j < d[1]; j++) {
-
-		// auto current_slice = x.sub<1>(myoffset+j);
-		// printf("Slice size: %d x %d x %d\n", (int) current_slice.extent(0), (int) current_slice.extent(1), (int) current_slice.extent(2));
 
 		dcomplex y0[NX][FFTBLOCKPAD];
 		dcomplex y1[NX][FFTBLOCKPAD];
@@ -630,21 +623,11 @@ static void cffts3(int is, int d[3], dash::NArray<dcomplex, 3> &x, dash::NArray<
 		for (int ii = 0; ii <= d[0] - fftblock; ii+=fftblock) {
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 			for (int k = 0; k < d[2]; k++) {
-				for (int i = 0; i < fftblock; i++) {
-					// dcomplex dummy = x[k][myoffset+j][i+ii];
-					// dcomplex dummy_slice = current_slice[k][i+ii];
-					// if(dummy.real != dummy_slice.real) {
-					// 	printf("Fault! coords: %d,%d,%d\n", k, myoffset+j, i+ii);
-					// 	return;
-					// } else {
-					// 	// printf("correct! coords: %d,%d,%d\n", k, myoffset+j, i+ii);
-					// }
-					//y0[k][i] = current_slice[k][i+ii];
-					 // y0[k][i] = x[k][myoffset+j][i+ii];
-					 y0[k][i] = x(k,myoffset+j,i+ii);
-					//y0[k][i].real = x.local[k][j][i+ii].real;
-					//y0[k][i].imag = x.local[k][j][i+ii].imag;
-				}
+				// for (int i = 0; i < fftblock; i++) {
+					 //y0[k][i] = x(k,myoffset+j,i+ii);
+					 int offset = k*NX*NY+(myoffset+j)*NX;
+					 dash::copy(x.begin()+offset+ii, x.begin()+offset+ii+fftblock, &y0[k][0]);
+				// }
 			}
 
 			//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
@@ -653,18 +636,16 @@ static void cffts3(int is, int d[3], dash::NArray<dcomplex, 3> &x, dash::NArray<
 			//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTLOW);
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 			for (int k = 0; k < d[2]; k++) {
-				for (int i = 0; i < fftblock; i++) {
-					xout(k,myoffset+j,i+ii) = y0[k][i];
-					// xout[k][myoffset+j][i+ii] = y0[k][i];
-					//xout.local[k][j][i+ii].real = y0[k][i].real;
-					//xout.local[k][j][i+ii].imag = y0[k][i].imag;
-				}
+				// for (int i = 0; i < fftblock; i++) {
+					// xout(k,myoffset+j,i+ii) = y0[k][i];
+					int offset = k*NX*NY+(myoffset+j)*NX;
+					dash::copy(&y0[k][0], &y0[k][fftblock], xout.begin()+offset+ii);
+				// }
 			}
 		//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
 		}
 	}
 	if (TIMERS_ENABLED == TRUE) timer_stop(T_MAX);
-// }
 }
 
 /*--------------------------------------------------------------------
