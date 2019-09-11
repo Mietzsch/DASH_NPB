@@ -78,7 +78,7 @@ static int zend[3];
 #define	T_FFTCOPY	6
 #define	T_MAX		7
 
-#define	TIMERS_ENABLED	TRUE
+#define	TIMERS_ENABLED	FALSE
 
 /* other stuff */
 

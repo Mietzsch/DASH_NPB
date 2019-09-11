@@ -579,6 +579,8 @@ static void cffts2(int is, int d[3], dash::NArray<dcomplex, 3> &x, dash::NArray<
 					y0[j][i].real = x.local(k,j,i+ii).real;
 					y0[j][i].imag = x.local(k,j,i+ii).imag;
 				}
+				// int offset = k*NX*NY+j*NX;
+				// std::copy(x.lbegin()+offset+ii, x.lbegin()+offset+ii+fftblock, &y0[j][0]);
 			}
 			//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTLOW);
@@ -586,10 +588,17 @@ static void cffts2(int is, int d[3], dash::NArray<dcomplex, 3> &x, dash::NArray<
 			//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTLOW);
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 			for (int j = 0; j < d[1]; j++) {
-				for (int i = 0; i < fftblock; i++) {
-					xout.local(k,j,i+ii).real = y0[j][i].real;
-					xout.local(k,j,i+ii).imag = y0[j][i].imag;
-				}
+				// for (int i = 0; i < fftblock; i++) {
+				// 	xout.local(k,j,i+ii).real = y0[j][i].real;
+				// 	xout.local(k,j,i+ii).imag = y0[j][i].imag;
+				// }
+				int offset = k*NX*NY+j*NX;
+				std::copy(&y0[j][0], &y0[j][fftblock], xout.lbegin()+offset+ii);
+				//
+				// The combination of reading in sequential and writing with std::copy
+				// seems to be the fastest with my setup. This definitely needs
+				// further investigation.
+				//
 			}
 		//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
 		}
@@ -620,15 +629,26 @@ static void cffts3(int is, int d[3], dash::NArray<dcomplex, 3> &x, dash::NArray<
 		dcomplex y0[NX][FFTBLOCKPAD];
 		dcomplex y1[NX][FFTBLOCKPAD];
 
+		// dash::Future<dcomplex*> futs[d[2]];
+		// typedef typename dash::Future<dash::GlobIter<dcomplex, dash::BlockPattern<3, (dash::MemArrange)1, long int>, dash::GlobStaticMem<dash::HostSpace>, dash::GlobPtr<dcomplex, dash::GlobStaticMem<dash::HostSpace> >, dash::GlobRef<dcomplex> > > async_write_type;
+		// async_write_type futs_w[d[2]];
+
+		//
+		// Asynchronous copy does not seem to yield anything, at best it is equally good.
+		//
+
 		for (int ii = 0; ii <= d[0] - fftblock; ii+=fftblock) {
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTCOPY);
 			for (int k = 0; k < d[2]; k++) {
 				// for (int i = 0; i < fftblock; i++) {
 					 //y0[k][i] = x(k,myoffset+j,i+ii);
-					 int offset = k*NX*NY+(myoffset+j)*NX;
-					 dash::copy(x.begin()+offset+ii, x.begin()+offset+ii+fftblock, &y0[k][0]);
 				// }
+				int offset = k*NX*NY+(myoffset+j)*NX;
+				dash::copy(x.begin()+offset+ii, x.begin()+offset+ii+fftblock, &y0[k][0]);
+				// futs[k] = dash::copy_async(x.begin()+offset+ii, x.begin()+offset+ii+fftblock, &y0[k][0]);
 			}
+
+			// for (int k = 0; k < d[2]; k++) futs[k].wait();
 
 			//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
 			//	if (TIMERS_ENABLED == TRUE) timer_start(T_FFTLOW);
@@ -638,10 +658,12 @@ static void cffts3(int is, int d[3], dash::NArray<dcomplex, 3> &x, dash::NArray<
 			for (int k = 0; k < d[2]; k++) {
 				// for (int i = 0; i < fftblock; i++) {
 					// xout(k,myoffset+j,i+ii) = y0[k][i];
-					int offset = k*NX*NY+(myoffset+j)*NX;
-					dash::copy(&y0[k][0], &y0[k][fftblock], xout.begin()+offset+ii);
 				// }
+				int offset = k*NX*NY+(myoffset+j)*NX;
+				dash::copy(&y0[k][0], &y0[k][fftblock], xout.begin()+offset+ii);
+				// futs_w[k] = dash::copy_async(&y0[k][0], &y0[k][fftblock], xout.begin()+offset+ii);
 			}
+			// for (int k = 0; k < d[2]; k++) futs_w[k].wait();
 		//	if (TIMERS_ENABLED == TRUE) timer_stop(T_FFTCOPY);
 		}
 	}
