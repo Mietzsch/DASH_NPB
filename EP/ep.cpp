@@ -18,11 +18,6 @@
 --------------------------------------------------------------------*/
 #include <libdash.h>
 
-#include <mutex>
-#include <vector>
-#include <algorithm>
-#include <numeric>
-
 #include "npbparams.hpp"
 #include <iostream>
 #include <../common/npb-CPP.hpp>
@@ -79,9 +74,9 @@ int main(int argc, char **argv) {
 		c   point print statement (internal file)
 		*/
 
-		printf("\n\n NAS Parallel Benchmarks 4.0 OpenMP C++STL_array version"" - EP Benchmark\n");
+		printf("\n\n NAS Parallel Benchmarks 4.0 C++ DASH version"" - EP Benchmark\n");
 		printf("\n\n Developed by: Dalvan Griebler <dalvan.griebler@acad.pucrs.br>\n");
-		printf("\n\n STL version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
+		printf("\n\n DASH version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
 		sprintf(size, "%12.0f", pow(2.0, M+1));
 		for (j = 13; j >= 1; j--) {
 			if (size[j] == '.') size[j] = ' ';
@@ -209,7 +204,7 @@ int main(int argc, char **argv) {
 	v.barrier();
 
 	if(TIMERS_ENABLED == TRUE) timer_stop(4);
-	
+
 	ep_res zero;
 
 	res[0] = dash::reduce(res.begin(), res.end(), zero, [](ep_res a, ep_res b){

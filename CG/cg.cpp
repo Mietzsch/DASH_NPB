@@ -126,9 +126,9 @@ int main(int argc, char **argv)
 
 	if (0 == dash::myid()) {
 
-		printf("\n\n NAS Parallel Benchmarks 4.0 OpenMP C++STL_array_OMP version"" - CG Benchmark\n");
+		printf("\n\n NAS Parallel Benchmarks 4.0 C++ DASH version"" - CG Benchmark\n");
 		printf("\n\n Developed by: Dalvan Griebler <dalvan.griebler@acad.pucrs.br>\n");
-		printf("\n\n STL version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
+		printf("\n\n DASH version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
 		printf(" Size: %10d\n", NA);
 		printf(" Iterations: %5d\n", NITER);
 

@@ -19,13 +19,7 @@
 --------------------------------------------------------------------*/
 #include <libdash.h>
 
-// #include <mutex>
-// #include <algorithm>
-// #include <utility>
 #include <vector>
-// #include <numeric>
-
-//#include "../common/mystl.h"
 
 #include <iostream>
 #include "npb-CPP.hpp"
@@ -108,9 +102,9 @@ int main(int argc, char *argv[]) {
 	c Read in and broadcast input data
 	c---------------------------------------------------------------------*/
 	if(dash::myid() == 0) {
-		printf("\n\n NAS Parallel Benchmarks 4.0 OpenMP C++STL_array version" " - MG Benchmark\n\n");
+		printf("\n\n NAS Parallel Benchmarks 4.0 C++ DASH version" " - MG Benchmark\n\n");
 		printf("\n\n Developed by: Dalvan Griebler <dalvan.griebler@acad.pucrs.br>\n");
-		printf("\n\n STL version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
+		printf("\n\n DASH version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
 	}
 
 	fp = fopen("mg.input", "r");

@@ -349,9 +349,9 @@ static void setup(void) {
 		/*int ierr, i, j, fstatus;*/
 		//int i;
 
-		printf("\n\n NAS Parallel Benchmarks 4.0 OpenMP C++STL_array version" " - FT Benchmark\n\n");
+		printf("\n\n NAS Parallel Benchmarks 4.0 C++ DASH version" " - FT Benchmark\n\n");
 		printf("\n\n Developed by: Dalvan Griebler <dalvan.griebler@acad.pucrs.br>\n");
-		printf("\n\n STL version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
+		printf("\n\n DASH version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
 
 		printf(" Size				: %3dx%3dx%3d\n", NX, NY, NZ);
 		printf(" Iterations		  :	 %7d\n", niter);
