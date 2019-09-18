@@ -11,22 +11,19 @@
 
 	STL version:
 	Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>
-	
+
 	CPP and OpenMP version:
 			Dalvan Griebler <dalvangriebler@gmail.com>
 			Júnior Löff <loffjh@gmail.com>
 
 --------------------------------------------------------------------*/
-#include "pstl/execution"
-#include "pstl/algorithm"
-#include "pstl/numeric"
+#include <libdash.h>
 
-#include <mutex>
-#include <algorithm>
-#include <utility>
+// #include <mutex>
+// #include <algorithm>
+// #include <utility>
 #include <vector>
-#include <numeric>
-#include <tbb/task_scheduler_init.h>
+// #include <numeric>
 
 //#include "../common/mystl.h"
 
@@ -46,19 +43,19 @@ static int is1, is2, is3, ie1, ie2, ie3;
 
 /* functions prototypes */
 static void setup(int *n1, int *n2, int *n3, int lt);
-static void mg3P(double ****u, double ***v, double ****r, double a[4], double c[4], int n1, int n2, int n3, int k);
-static void psinv(double ***r, double ***u, int n1, int n2, int n3, double c[4], int k);
-static void resid(double ***u, double ***v, double ***r, int n1, int n2, int n3, double a[4], int k);
-static void rprj3(double ***r, int m1k, int m2k, int m3k, double ***s, int m1j, int m2j, int m3j, int k);
-static void interp(double ***z, int mm1, int mm2, int mm3, double ***u, int n1, int n2, int n3, int k);
-static void norm2u3(double ***r, int n1, int n2, int n3, double *rnm2, double *rnmu, int nx, int ny, int nz);
-static void rep_nrm(double ***u, int n1, int n2, int n3, char *title, int kk);
-static void comm3(double ***u, int n1, int n2, int n3);
-static void zran3(double ***z, int n1, int n2, int n3, int nx, int ny, int k);
-static void showall(double ***z, int n1, int n2, int n3);
+static void mg3P(std::vector<dash::NArray<double, 3> > &u, dash::NArray<double, 3> &v, std::vector<dash::NArray<double, 3> > &r, double a[4], double c[4], int n1, int n2, int n3, int k);
+static void psinv(dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n1, int n2, int n3, double c[4], int k);
+static void resid(dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash::NArray<double, 3> &r, int n1, int n2, int n3, double a[4], int k);
+static void rprj3(dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::NArray<double, 3> &s, int m1j, int m2j, int m3j, int k);
+static void interp(dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash::NArray<double, 3> &u, int n1, int n2, int n3, int k);
+static void norm2u3(dash::NArray<double, 3> &r, int n1, int n2, int n3, double *rnm2, double *rnmu, int nx, int ny, int nz);
+static void rep_nrm(dash::NArray<double, 3> &u, int n1, int n2, int n3, char *title, int kk);
+static void comm3(dash::NArray<double, 3> &u, int n1, int n2, int n3);
+static void zran3(dash::NArray<double, 3> &z, int n1, int n2, int n3, int nx, int ny, int k);
+static void showall(dash::NArray<double, 3> &z, int n1, int n2, int n3);
 static double power(double a, int n);
 static void bubble(double ten[M][2], int j1[M][2], int j2[M][2], int j3[M][2], int m, int ind);
-static void zero3(double ***z, int n1, int n2, int n3);
+static void zero3(dash::NArray<double, 3> &z, int n1, int n2, int n3);
 /*static void nonzero(double ***z, int n1, int n2, int n3);*/
 
 /*--------------------------------------------------------------------
@@ -67,57 +64,55 @@ c-------------------------------------------------------------------*/
 
 int main(int argc, char *argv[]) {
 
+	dash::init(&argc, &argv);
 	/*-------------------------------------------------------------------------
 	c k is the current level. It is passed down through subroutine args
 	c and is NOT global. it is the current iteration
 	c------------------------------------------------------------------------*/
-	
+
 	int k, it;
 	double t, tinit, mflops;
 	int nthreads = 1;
-	
+
 	/*-------------------------------------------------------------------------
 	c These arrays are in common because they are quite large
 	c and probably shouldn't be allocated on the stack. They
-	c are always passed as subroutine args. 
+	c are always passed as subroutine args.
 	c------------------------------------------------------------------------*/
-	
-	double ****u, ***v, ****r;
+
+	auto distspec = dash::DistributionSpec<3>( dash::BLOCKED, dash::NONE , dash::NONE);
+	std::vector<dash::NArray<double, 3> > u;
+	dash::NArray<double, 3> v;
+	std::vector<dash::NArray<double, 3> > r;
+
 	double a[4], c[4];
-	
+
 	double rnm2, rnmu;
 	double epsilon = 1.0e-8;
 	int n1, n2, n3, nit;
 	double verify_value;
 	boolean verified;
-	
+
 	int i, j, l;
 	FILE *fp;
-	
+
 	timer_clear(T_BENCH);
 	timer_clear(T_INIT);
 	timer_clear(T_STL);
-	
-	int num_workers;
-	if(const char * nw = std::getenv("TBB_NUM_THREADS")) {
-		num_workers = atoi(nw);
-	} else {
-		num_workers = 1;
-	}
-	
-	tbb::task_scheduler_init init(num_workers);
-	nthreads = num_workers;
-	
+
+	nthreads = dash::size();
+
 	timer_start(T_INIT);
-	
+
 	/*----------------------------------------------------------------------
 	c Read in and broadcast input data
 	c---------------------------------------------------------------------*/
-	
-	printf("\n\n NAS Parallel Benchmarks 4.0 OpenMP C++STL_array version" " - MG Benchmark\n\n");
-	printf("\n\n Developed by: Dalvan Griebler <dalvan.griebler@acad.pucrs.br>\n");
-	printf("\n\n STL version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
-	
+	if(dash::myid() == 0) {
+		printf("\n\n NAS Parallel Benchmarks 4.0 OpenMP C++STL_array version" " - MG Benchmark\n\n");
+		printf("\n\n Developed by: Dalvan Griebler <dalvan.griebler@acad.pucrs.br>\n");
+		printf("\n\n STL version by: Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>\n");
+	}
+
 	fp = fopen("mg.input", "r");
 	if (fp != NULL) {
 		printf(" Reading from input file mg.input\n");
@@ -144,19 +139,19 @@ int main(int argc, char *argv[]) {
 		}
 		fclose(fp);
 	} else {
-		printf(" No input file. Using compiled defaults\n");
-		
+		if(dash::myid() == 0) printf(" No input file. Using compiled defaults\n");
+
 		lt = LT_DEFAULT;
 		nit = NIT_DEFAULT;
 		nx[lt] = NX_DEFAULT;
 		ny[lt] = NY_DEFAULT;
 		nz[lt] = NZ_DEFAULT;
-		
+
 		for (i = 0; i <= 7; i++) {
 			debug_vec[i] = DEBUG_DEFAULT;
 		}
 	}
-	
+
 	if ( (nx[lt] != ny[lt]) || (nx[lt] != nz[lt]) ) {
 		class_npb = 'U';
 	} else if( nx[lt] == 32 && nit == 4 ) {
@@ -172,7 +167,7 @@ int main(int argc, char *argv[]) {
 	} else {
 		class_npb = 'U';
 	}
-	
+
 	/*--------------------------------------------------------------------
 	c  Use these for debug info:
 	c---------------------------------------------------------------------
@@ -186,12 +181,12 @@ int main(int argc, char *argv[]) {
 	c	 debug_vec(6) = 1 => (unused)
 	c	 debug_vec(7) = 1 => (unused)
 	c-------------------------------------------------------------------*/
-	
+
 	a[0] = -8.0/3.0;
 	a[1] =  0.0;
 	a[2] =  1.0/6.0;
 	a[3] =  1.0/12.0;
-	
+
 	if (class_npb == 'A' || class_npb == 'S' || class_npb =='W') {
 		/*--------------------------------------------------------------------
 		c	Coefficients for the S(a) smoother
@@ -209,140 +204,129 @@ int main(int argc, char *argv[]) {
 		c[2] =  -1.0/61.0;
 		c[3] =   0.0;
 	}
-	
+
 	lb = 1;
-	
+
 	setup(&n1,&n2,&n3,lt);
-	
-	u = (double ****)malloc((lt+1)*sizeof(double ***));
+
+	u.resize(lt+1);
 	for (l = lt; l >=1; l--) {
-		u[l] = (double ***)malloc(m3[l]*sizeof(double **));
-		for (k = 0; k < m3[l]; k++) {
-			u[l][k] = (double **)malloc(m2[l]*sizeof(double *));
-			for (j = 0; j < m2[l]; j++) {
-			u[l][k][j] = (double *)malloc(m1[l]*sizeof(double));
-			}
-		}
+		u[l].allocate(m3[l],m2[l],m1[l], distspec);
 	}
-	v = (double ***)malloc(m3[lt]*sizeof(double **));
-	for (k = 0; k < m3[lt]; k++) {
-		v[k] = (double **)malloc(m2[lt]*sizeof(double *));
-		for (j = 0; j < m2[lt]; j++) {
-			v[k][j] = (double *)malloc(m1[lt]*sizeof(double));
-		}
-	}
-	r = (double ****)malloc((lt+1)*sizeof(double ***));
+
+	v.allocate(m3[lt],m2[lt],m1[lt], distspec);
+
+	r.resize(lt+1);
 	for (l = lt; l >=1; l--) {
-		r[l] = (double ***)malloc(m3[l]*sizeof(double **));
-		for (k = 0; k < m3[l]; k++) {
-			r[l][k] = (double **)malloc(m2[l]*sizeof(double *));
-			for (j = 0; j < m2[l]; j++) {
-				r[l][k][j] = (double *)malloc(m1[l]*sizeof(double));
-			}
-		}
+		r[l].allocate(m3[l],m2[l],m1[l], distspec);
 	}
-	
-	
+
 	zero3(u[lt],n1,n2,n3);
 	zran3(v,n1,n2,n3,nx[lt],ny[lt],lt);
-	
+
 	norm2u3(v,n1,n2,n3,&rnm2,&rnmu,nx[lt],ny[lt],nz[lt]);
-	
-	
-	/*printf("\n norms of random v are\n");
-	printf(" %4d%19.12e%19.12e\n", 0, rnm2, rnmu);
-	printf(" about to evaluate resid, k= %d\n", lt);*/
-	
-	printf(" Size: %3dx%3dx%3d (class_npb %1c)\n", nx[lt], ny[lt], nz[lt], class_npb);
-	printf(" Iterations: %3d\n", nit);
-	
-	
+
+	if(dash::myid() == 0) {
+		/*printf("\n norms of random v are\n");
+		printf(" %4d%19.12e%19.12e\n", 0, rnm2, rnmu);
+		printf(" about to evaluate resid, k= %d\n", lt);*/
+
+		printf(" Size: %3dx%3dx%3d (class_npb %1c)\n", nx[lt], ny[lt], nz[lt], class_npb);
+		printf(" Iterations: %3d\n", nit);
+	}
+
 	resid(u[lt],v,r[lt],n1,n2,n3,a,lt);
 	norm2u3(r[lt],n1,n2,n3,&rnm2,&rnmu,nx[lt],ny[lt],nz[lt]);
-	
+
 	/*c---------------------------------------------------------------------
 	c	 One iteration for startup
 	c---------------------------------------------------------------------*/
 	mg3P(u,v,r,a,c,n1,n2,n3,lt);
 	resid(u[lt],v,r[lt],n1,n2,n3,a,lt);
-	
+
 	setup(&n1,&n2,&n3,lt);
-	
+
 	zero3(u[lt],n1,n2,n3);
 	zran3(v,n1,n2,n3,nx[lt],ny[lt],lt);
-	
-	timer_stop(T_INIT);
-	
-	timer_clear(T_STL);
-	
-	//std::clear();
-	
-	timer_start(T_BENCH);
-	
+
+	if(dash::myid() == 0) {
+		timer_stop(T_INIT);
+
+		timer_clear(T_STL);
+
+		//std::clear();
+
+		timer_start(T_BENCH);
+	}
+
 	resid(u[lt],v,r[lt],n1,n2,n3,a,lt);
 	norm2u3(r[lt],n1,n2,n3,&rnm2,&rnmu,nx[lt],ny[lt],nz[lt]);
-	
+
 	for ( it = 1; it <= nit; it++) {
 		mg3P(u,v,r,a,c,n1,n2,n3,lt);
 		resid(u[lt],v,r[lt],n1,n2,n3,a,lt);
 	}
 	norm2u3(r[lt],n1,n2,n3,&rnm2,&rnmu,nx[lt],ny[lt],nz[lt]);
-	
-	timer_stop(T_BENCH);
-	
-	t = timer_read(T_BENCH);
-	tinit = timer_read(T_INIT);
-	
-	verified = FALSE;
-	verify_value = 0.0;
-	
-	printf(" Initialization time: %15.3f seconds\n", tinit);
-	printf(" Benchmark completed\n");
-	
-	if (class_npb != 'U') {
-		if (class_npb == 'S') {
-				verify_value = 0.530770700573e-04;
-		} else if (class_npb == 'W') {
-				verify_value = 0.250391406439e-17;  /* 40 iterations*/
-			/*	0.183103168997d-044 iterations*/
-		} else if (class_npb == 'A') {
-				verify_value = 0.2433365309e-5;
-			} else if (class_npb == 'B') {
-				verify_value = 0.180056440132e-5;
-			} else if (class_npb == 'C') {
-				verify_value = 0.570674826298e-06;
-		}
-		
-		if ( fabs( rnm2 - verify_value ) <= epsilon ) {
-			verified = TRUE;
-			printf(" VERIFICATION SUCCESSFUL\n");
-			printf(" L2 Norm is %20.12e\n", rnm2);
-			printf(" Error is   %20.12e\n", rnm2 - verify_value);
+
+	if(dash::myid() == 0) {
+		timer_stop(T_BENCH);
+
+		t = timer_read(T_BENCH);
+		tinit = timer_read(T_INIT);
+
+		verified = FALSE;
+		verify_value = 0.0;
+
+		printf(" Initialization time: %15.3f seconds\n", tinit);
+		printf(" Benchmark completed\n");
+
+		if (class_npb != 'U') {
+			if (class_npb == 'S') {
+					verify_value = 0.530770700573e-04;
+			} else if (class_npb == 'W') {
+					verify_value = 0.250391406439e-17;  /* 40 iterations*/
+				/*	0.183103168997d-044 iterations*/
+			} else if (class_npb == 'A') {
+					verify_value = 0.2433365309e-5;
+				} else if (class_npb == 'B') {
+					verify_value = 0.180056440132e-5;
+				} else if (class_npb == 'C') {
+					verify_value = 0.570674826298e-06;
+			}
+
+			if ( fabs( rnm2 - verify_value ) <= epsilon ) {
+				verified = TRUE;
+				printf(" VERIFICATION SUCCESSFUL\n");
+				printf(" L2 Norm is %20.12e\n", rnm2);
+				printf(" Error is   %20.12e\n", rnm2 - verify_value);
+			} else {
+				verified = FALSE;
+				printf(" VERIFICATION FAILED\n");
+				printf(" L2 Norm is			 %20.12e\n", rnm2);
+				printf(" The correct L2 Norm is %20.12e\n", verify_value);
+			}
 		} else {
 			verified = FALSE;
-			printf(" VERIFICATION FAILED\n");
-			printf(" L2 Norm is			 %20.12e\n", rnm2);
-			printf(" The correct L2 Norm is %20.12e\n", verify_value);
+			printf(" Problem size unknown\n");
+			printf(" NO VERIFICATION PERFORMED\n");
 		}
-	} else {
-		verified = FALSE;
-		printf(" Problem size unknown\n");
-		printf(" NO VERIFICATION PERFORMED\n");
-	}
-	
-	if ( t != 0.0 ) {
-		int nn = nx[lt]*ny[lt]*nz[lt];
-		mflops = 58.*nit*nn*1.0e-6 / t;
-	} else {
-		mflops = 0.0;
-	}
-	
-	c_print_results((char*)"MG", class_npb, nx[lt], ny[lt], nz[lt], nit, nthreads, t, mflops, (char*)"		  floating point", 
-			verified, (char*)NPBVERSION, (char*)COMPILETIME, (char*)CS1, (char*)CS2, (char*)CS3, (char*)CS4, (char*)CS5, (char*)CS6, (char*)CS7);
-	if(TIMERS_ENABLED == TRUE) printf(" time spent in STL: %15.3f seconds\n", timer_read(T_STL));
 
-	//printf("\n mystl statistics:\n");
-	//std::dump();
+		if ( t != 0.0 ) {
+			int nn = nx[lt]*ny[lt]*nz[lt];
+			mflops = 58.*nit*nn*1.0e-6 / t;
+		} else {
+			mflops = 0.0;
+		}
+
+		c_print_results((char*)"MG", class_npb, nx[lt], ny[lt], nz[lt], nit, nthreads, t, mflops, (char*)"		  floating point",
+				verified, (char*)NPBVERSION, (char*)COMPILETIME, (char*)CS1, (char*)CS2, (char*)CS3, (char*)CS4, (char*)CS5, (char*)CS6, (char*)CS7);
+		if(TIMERS_ENABLED == TRUE) printf(" time spent in STL: %15.3f seconds\n", timer_read(T_STL));
+
+		//printf("\n mystl statistics:\n");
+		//std::dump();
+	}
+
+	dash::finalize();
 
 	return 0;
 }
@@ -351,24 +335,24 @@ int main(int argc, char *argv[]) {
 c-------------------------------------------------------------------*/
 
 static void setup(int *n1, int *n2, int *n3, int lt) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	int k;
-	
+
 	for ( k = lt-1; k >= 1; k--) {
 		nx[k] = nx[k+1]/2;
 		ny[k] = ny[k+1]/2;
 		nz[k] = nz[k+1]/2;
 	}
-	
+
 	for (k = 1; k <= lt; k++) {
 		m1[k] = nx[k]+2;
 		m2[k] = nz[k]+2;
 		m3[k] = ny[k]+2;
 	}
-	
+
 	is1 = 1;
 	ie1 = nx[lt];
 	*n1 = nx[lt]+2;
@@ -378,8 +362,8 @@ static void setup(int *n1, int *n2, int *n3, int lt) {
 	is3 = 1;
 	ie3 = nz[lt];
 	*n3 = nz[lt]+2;
-	
-	if (debug_vec[1] >=  1 ) {
+
+	if (debug_vec[1] >=  1 && dash::myid() == 0) {
 		printf(" in setup, \n");
 		printf("  lt  nx  ny  nz  n1  n2  n3 is1 is2 is3 ie1 ie2 ie3\n");
 		printf("%4d%4d%4d%4d%4d%4d%4d%4d%4d%4d%4d%4d%4d\n",lt,nx[lt],ny[lt],nz[lt],*n1,*n2,*n3,is1,is2,is3,ie1,ie2,ie3);
@@ -389,34 +373,34 @@ static void setup(int *n1, int *n2, int *n3, int lt) {
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void mg3P(double ****u, double ***v, double ****r, double a[4], double c[4], int n1, int n2, int n3, int k) {
-	
+static void mg3P(std::vector<dash::NArray<double, 3> > &u, dash::NArray<double, 3> &v, std::vector<dash::NArray<double, 3> > &r, double a[4], double c[4], int n1, int n2, int n3, int k) {
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c multigrid V-cycle routine
 	c-------------------------------------------------------------------*/
-	
+
 	int j;
-	
+
 	/*--------------------------------------------------------------------
 	c	 down cycle.
 	c	 restrict the residual from the find grid to the coarse
 	c-------------------------------------------------------------------*/
-	
+
 	for (k = lt; k >= lb+1; k--) {
 		j = k-1;
 		rprj3(r[k], m1[k], m2[k], m3[k], r[j], m1[j], m2[j], m3[j], k);
 	}
-	
+
 	k = lb;
 	/*--------------------------------------------------------------------
 	c	 compute an approximate solution on the coarsest grid
 	c-------------------------------------------------------------------*/
 	zero3(u[k], m1[k], m2[k], m3[k]);
 	psinv(r[k], u[k], m1[k], m2[k], m3[k], c, k);
-	
+
 	for (k = lb+1; k <= lt-1; k++) {
 		j = k-1;
 		/*--------------------------------------------------------------------
@@ -433,7 +417,7 @@ static void mg3P(double ****u, double ***v, double ****r, double a[4], double c[
 		c-------------------------------------------------------------------*/
 		psinv(r[k], u[k], m1[k], m2[k], m3[k], c, k);
 	}
-	
+
 	j = lt - 1;
 	k = lt;
 	interp(u[j], m1[j], m2[j], m3[j], u[lt], n1, n2, n3, k);
@@ -444,31 +428,25 @@ static void mg3P(double ****u, double ***v, double ****r, double a[4], double c[
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void psinv( double ***r, double ***u, int n1, int n2, int n3, double c[4], int k) {
-	
+static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n1, int n2, int n3, double c[4], int k) {
+	if(dash::myid() == 0) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c	 psinv applies an approximate inverse as smoother:  u = u + Cr
-	c	
+	c
 	c	 This  implementation costs  15A + 4M per result, where
-	c	 A and M denote the costs of Addition and Multiplication.  
+	c	 A and M denote the costs of Addition and Multiplication.
 	c	 Presuming coefficient c(3) is zero (the NPB assumes this,
 	c	 but it is thus not a general case), 2A + 1M may be eliminated,
 	c	 resulting in 13A + 3M.
-	c	 Note that this vectorizes, and is also fine for cache 
-	c	 based machines.  
+	c	 Note that this vectorizes, and is also fine for cache
+	c	 based machines.
 	c-------------------------------------------------------------------*/
-	
-	if(TIMERS_ENABLED == TRUE) timer_start(T_STL);
-	
-	int v[n3-2];
-	std::iota(&v[0], &v[n3-2], 1);
-	
-	std::for_each(pstl::execution::par, &v[0], &v[n3-2], [&r, &u, &n1, &n2, &c](int i3)
-	{
-		double r1[M], r2[M];
+	double r1[M], r2[M];
+
+	for(int i3 = 1; i3 < n3-1; i3++) {
 		for (int i2 = 1; i2 < n2-1; i2++) {
 			for (int i1 = 0; i1 < n1; i1++) {
 				r1[i1] = r[i3][i2-1][i1] + r[i3][i2+1][i1] + r[i3-1][i2][i1] + r[i3+1][i2][i1];
@@ -486,60 +464,52 @@ static void psinv( double ***r, double ***u, int n1, int n2, int n3, double c[4]
 				//c-------------------------------------------------------------------
 			}
 		}
-	});//, "psinv");
-	
-	if(TIMERS_ENABLED == TRUE) timer_stop(T_STL);
-	
+	}
+
 	/*--------------------------------------------------------------------
 	c	 exchange boundary points
 	c-------------------------------------------------------------------*/
 	comm3(u,n1,n2,n3);
-	
+
 	if (debug_vec[0] >= 1 ) {
 		rep_nrm(u,n1,n2,n3,(char*)"   psinv",k);
 	}
-	
+
 	if ( debug_vec[3] >= k ) {
 		showall(u,n1,n2,n3);
-	}
+	}}
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void resid( double ***u, double ***v, double ***r, int n1, int n2, int n3, double a[4], int k ) {
-	
+static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash::NArray<double, 3> &r, int n1, int n2, int n3, double a[4], int k ) {
+	if(dash::myid() == 0) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c	 resid computes the residual:  r = v - Au
-	c	
+	c
 	c	 This  implementation costs  15A + 4M per result, where
-	c	 A and M denote the costs of Addition (or Subtraction) and 
-	c	 Multiplication, respectively. 
+	c	 A and M denote the costs of Addition (or Subtraction) and
+	c	 Multiplication, respectively.
 	c	 Presuming coefficient a(1) is zero (the NPB assumes this,
 	c	 but it is thus not a general case), 3A + 1M may be eliminated,
 	c	 resulting in 12A + 3M.
-	c	 Note that this vectorizes, and is also fine for cache 
-	c	 based machines.  
+	c	 Note that this vectorizes, and is also fine for cache
+	c	 based machines.
 	c-------------------------------------------------------------------*/
-	
-	if(TIMERS_ENABLED == TRUE) timer_start(T_STL);
-	
-	int c[n3-2];
-	std::iota(&c[0], &c[n3-2], 1);
-	
-	std::for_each(pstl::execution::par, &c[0], &c[n3-2], [&u, &v, &r, &n1, &n2, &a](int i3)
-	{
-		double u1[M], u2[M];
+
+	double u1[M], u2[M];
+	for(int i3 = 1; i3 < n3-1; i3++) {
 		for (int i2 = 1; i2 < n2-1; i2++) {
 			for (int i1 = 0; i1 < n1; i1++) {
 				u1[i1] = u[i3][i2-1][i1] + u[i3][i2+1][i1] + u[i3-1][i2][i1] + u[i3+1][i2][i1];
 				u2[i1] = u[i3-1][i2-1][i1] + u[i3-1][i2+1][i1] + u[i3+1][i2-1][i1] + u[i3+1][i2+1][i1];
 			}
 			for (int i1 = 1; i1 < n1-1; i1++) {
-				r[i3][i2][i1] = v[i3][i2][i1] 
+				r[i3][i2][i1] = v[i3][i2][i1]
 				 - a[0] * u[i3][i2][i1]
 				//--------------------------------------------------------------------
 				//c  Assume a(1) = 0	  (Enable 2 lines below if a(1) not= 0)
@@ -551,85 +521,78 @@ static void resid( double ***u, double ***v, double ***r, int n1, int n2, int n3
 				 - a[3] * ( u2[i1-1] + u2[i1+1] );
 			}
 		}
-	});//, "resid");
-	
-	if(TIMERS_ENABLED == TRUE) timer_stop(T_STL);
-	
+	}
+
+
 	/*--------------------------------------------------------------------
 	c	 exchange boundary data
 	c--------------------------------------------------------------------*/
 	comm3(r,n1,n2,n3);
-	
+
 	if (debug_vec[0] >= 1 ) {
 		rep_nrm(r,n1,n2,n3,(char*)"   resid",k);
 	}
-	
+
 	if ( debug_vec[2] >= k ) {
 		showall(r,n1,n2,n3);
-	}
+	}}
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void rprj3( double ***r, int m1k, int m2k, int m3k, double ***s, int m1j, int m2j, int m3j, int k ) {
-	
+static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::NArray<double, 3> &s, int m1j, int m2j, int m3j, int k ) {
+	if(dash::myid() == 0) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
-	c	 rprj3 projects onto the next coarser grid, 
+	c	 rprj3 projects onto the next coarser grid,
 	c	 using a trilinear Finite Element projection:  s = r' = P r
-	c	 
+	c
 	c	 This  implementation costs  20A + 4M per result, where
-	c	 A and M denote the costs of Addition and Multiplication.  
-	c	 Note that this vectorizes, and is also fine for cache 
-	c	 based machines.  
+	c	 A and M denote the costs of Addition and Multiplication.
+	c	 Note that this vectorizes, and is also fine for cache
+	c	 based machines.
 	c-------------------------------------------------------------------*/
-	
+
 	int d1, d2, d3;
-	
+
 	if (m1k == 3) {
 		d1 = 2;
 	} else {
 		d1 = 1;
 	}
-	
+
 	if (m2k == 3) {
 		d2 = 2;
 	} else {
 		d2 = 1;
 	}
-	
+
 	if (m3k == 3) {
 		d3 = 2;
 	} else {
 		d3 = 1;
 	}
-	
-	if(TIMERS_ENABLED == TRUE) timer_start(T_STL);
-	
-	int v[m3j-2];
-	std::iota(&v[0], &v[m3j-2], 1);
-	
-	std::for_each(pstl::execution::par, &v[0], &v[m3j-2], [&r, &s, &m1j, &m2j, &d1, &d2, &d3](int j3)
-	{
-		int j2, j1, i3, i2, i1;
-		double x1[M], y1[M], x2, y2;
-		
+
+	int j2, j1, i3, i2, i1;
+	double x1[M], y1[M], x2, y2;
+
+	for(int j3 = 1; j3 < m3j-1; j3++) {
 		i3 = 2*j3-d3;
 		//C	i3 = 2*j3-1
 		for (j2 = 1; j2 < m2j-1; j2++) {
 			i2 = 2*j2-d2;
 			//C  i2 = 2*j2-1
-			
+
 			for (j1 = 1; j1 < m1j; j1++) {
 				i1 = 2*j1-d1;
 			//C	i1 = 2*j1-1
 				x1[i1] = r[i3+1][i2][i1] + r[i3+1][i2+2][i1] + r[i3][i2+1][i1] + r[i3+2][i2+1][i1];
 				y1[i1] = r[i3][i2][i1] + r[i3+2][i2][i1] + r[i3][i2+2][i1] + r[i3+2][i2+2][i1];
 			}
-			
+
 			for (j1 = 1; j1 < m1j-1; j1++) {
 				i1 = 2*j1-d1;
 			//C	i1 = 2*j1-1
@@ -642,60 +605,52 @@ static void rprj3( double ***r, int m1k, int m2k, int m3k, double ***s, int m1j,
 					+ 0.0625 * ( y1[i1] + y1[i1+2] );
 			}
 		}
-	});//, "rprj3");
-	
-	if(TIMERS_ENABLED == TRUE) timer_stop(T_STL);
-	
+	}
+
 	comm3(s,m1j,m2j,m3j);
-	
+
 	if (debug_vec[0] >= 1 ) {
 		rep_nrm(s,m1j,m2j,m3j,(char*)"   rprj3",k-1);
 	}
-	
+
 	if (debug_vec[4] >= k ) {
 		showall(s,m1j,m2j,m3j);
-	}
+	}}
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void interp( double ***z, int mm1, int mm2, int mm3, double ***u, int n1, int n2, int n3, int k ) {
-	
+static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash::NArray<double, 3> &u, int n1, int n2, int n3, int k ) {
+	if(0 == dash::myid()) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c	 interp adds the trilinear interpolation of the correction
 	c	 from the coarser grid to the current approximation:  u = u + Qu'
-	c	 
+	c
 	c	 Observe that this  implementation costs  16A + 4M, where
-	c	 A and M denote the costs of Addition and Multiplication.  
-	c	 Note that this vectorizes, and is also fine for cache 
-	c	 based machines.  Vector machines may get slightly better 
+	c	 A and M denote the costs of Addition and Multiplication.
+	c	 Note that this vectorizes, and is also fine for cache
+	c	 based machines.  Vector machines may get slightly better
 	c	 performance however, with 8 separate "do i1" loops, rather than 4.
 	c-------------------------------------------------------------------*/
-	
+
 	int d1, d2, d3, t1, t2, t3;
-	
+
 	/*
 	c note that m = 1037 in globals.h but for this only need to be
 	c 535 to handle up to 1024^3
 	c integer m
 	c parameter( m=535 )
 	*/
-	
+
 	if ( n1 != 3 && n2 != 3 && n3 != 3 ) {
-		
-		if(TIMERS_ENABLED == TRUE) timer_start(T_STL);
-		
-		int v[mm3-1];
-		std::iota(&v[0], &v[mm3-1], 0);
-		
-		std::for_each(pstl::execution::par, &v[0], &v[mm3-1], [&z, &u, &mm1, &mm2](int i3)
-		{
-			double z1[M], z2[M], z3[M];
-			
+
+		double z1[M], z2[M], z3[M];
+
+		for(int i3 = 0; i3 < mm3-1; i3++) {
 			for (int i2 = 0; i2 < mm2-1; i2++) {
 				for (int i1 = 0; i1 < mm1; i1++) {
 					z1[i1] = z[i3][i2+1][i1] + z[i3][i2][i1];
@@ -719,10 +674,8 @@ static void interp( double ***z, int mm1, int mm2, int mm3, double ***u, int n1,
 					u[2*i3+1][2*i2+1][2*i1+1] = u[2*i3+1][2*i2+1][2*i1+1] + 0.125*( z3[i1] + z3[i1+1] );
 				}
 			}
-		});//, "interp");
-		
-		if(TIMERS_ENABLED == TRUE) timer_stop(T_STL);
-		
+		}
+
 	} else {
 		if (n1 == 3) {
 			d1 = 2;
@@ -737,7 +690,7 @@ static void interp( double ***z, int mm1, int mm2, int mm3, double ***u, int n1,
 		} else {
 			d2 = 1;
 			t2 = 0;
-		}  
+		}
 		if (n3 == 3) {
 			d3 = 2;
 			t3 = 1;
@@ -745,14 +698,8 @@ static void interp( double ***z, int mm1, int mm2, int mm3, double ***u, int n1,
 			d3 = 1;
 			t3 = 0;
 		}
-		
-		if(TIMERS_ENABLED == TRUE) timer_start(T_STL);
-		
-		int v1[mm3-d3];
-		std::iota(&v1[0], &v1[mm3-d3], d3);
-		
-		std::for_each(pstl::execution::par, &v1[0], &v1[mm3-d3], [&z, &u, &d1, &d2, &d3, &t1, &t2, &t3, &mm1, &mm2](int i3)
-		{
+
+		for(int i3 = d3; i3 <= mm3-1; i3++) {
 			for (int i2 = d2; i2 <= mm2-1; i2++) {
 				for (int i1 = d1; i1 <= mm1-1; i1++) {
 					u[2*i3-d3-1][2*i2-d2-1][2*i1-d1-1] =
@@ -777,13 +724,9 @@ static void interp( double ***z, int mm1, int mm2, int mm3, double ***u, int n1,
 					+0.25*(z[i3-1][i2][i1]+z[i3-1][i2-1][i1] + z[i3-1][i2][i1-1]+z[i3-1][i2-1][i1-1]);
 				}
 			}
-		});//, "interp");
-		
-		int v2[mm3];
-		std::iota(&v2[0], &v2[mm3], 1);
-		
-		std::for_each(pstl::execution::par, &v2[0], &v2[mm3], [&z, &u, &d1, &d2, &d3, &t1, &t2, &t3, &mm1, &mm2](int i3)
-		{
+		}
+
+		for(int i3 = 1; i3 <= mm3-1; i3++) {
 			for (int i2 = d2; i2 <= mm2-1; i2++) {
 				for (int i1 = d1; i1 <= mm1-1; i1++) {
 					u[2*i3-t3-1][2*i2-d2-1][2*i1-d1-1] =
@@ -811,11 +754,9 @@ static void interp( double ***z, int mm1, int mm2, int mm3, double ***u, int n1,
 						+z[i3-1][i2][i1-1]+z[i3-1][i2-1][i1-1]);
 				}
 			}
-		});//, "interp");
-		
-		if(TIMERS_ENABLED == TRUE) timer_stop(T_STL);
+		}
 	}
-	
+
 	{
 		if (debug_vec[0] >= 1 ) {
 			rep_nrm(z,mm1,mm2,mm3,(char*)"z: inter",k-1);
@@ -825,17 +766,17 @@ static void interp( double ***z, int mm1, int mm2, int mm3, double ***u, int n1,
 			showall(z,mm1,mm2,mm3);
 			showall(u,n1,n2,n3);
 		}
-	}
+	}}
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void norm2u3(double ***r, int n1, int n2, int n3, double *rnm2, double *rnmu, int nx, int ny, int nz) {
-	
+static void norm2u3( dash::NArray<double, 3> &r, int n1, int n2, int n3, double *rnm2, double *rnmu, int nx, int ny, int nz) {
+	if(dash::myid() == 0) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c	 norm2u3 evaluates approximations to the L2 norm and the
 	c	 uniform (or L-infinity or Chebyshev) norm, under the
@@ -843,202 +784,127 @@ static void norm2u3(double ***r, int n1, int n2, int n3, double *rnm2, double *r
 	c	 boundaries in with half weight (quarter weight on the edges
 	c	 and eighth weight at the corners) for inhomogeneous boundaries.
 	c-------------------------------------------------------------------*/
-	
+
 	static double s = 0.0;
-	int n;
-	
+	double tmp;
+  int i3, i2, i1, n;
+  double p_s = 0.0, p_a = 0.0;
+
 	n = nx*ny*nz;
-	
-	if(TIMERS_ENABLED == TRUE) timer_start(T_STL);
-	
-	//this is option 1
-	std::pair<double, double> p = std::make_pair (0.0,0.0);
-	
-	p = std::transform_reduce(pstl::execution::par, &r[1], &r[n3-1], p,
-	[](std::pair<double, double> p1, std::pair<double, double> p2) -> std::pair<double, double>{
-		return std::make_pair (p1.first + p2.first, max(p1.second, p2.second));
-	}, [&n1, &n2](double **r) -> std::pair<double, double>{
-		double p_s_tbb = 0.0, p_a_tbb = 0.0;
-		double tmp;
-		
-		for (int i2 = 1; i2 < n2-1; i2++) {
-			for (int i1 = 1; i1 < n1-1; i1++) {
-				p_s_tbb = p_s_tbb + r[i2][i1] * r[i2][i1];
-				tmp = fabs(r[i2][i1]);
-				if (tmp > p_a_tbb) p_a_tbb = tmp;
-			}
-		}
-		return std::make_pair (p_s_tbb,p_a_tbb);
-	});
-	if(TIMERS_ENABLED == TRUE) timer_stop(T_STL);
-	
-	s += p.first;
-	if (p.second > *rnmu) *rnmu = p.second;
-	
-	
-	//this is maybe a bit better than option 1
-	/*
-	double p_s = 0.0, p_a = 0.0;
-	
-	std::mutex my_m;
-	
-	int v[n3-2];
-	std::iota(&v[0], &v[n3-2], 1);
-	
-	std::for_each(pstl::execution::par, &v[0], &v[n3-2], [&r, &n1, &n2, &p_a, &p_s, &my_m](int i3)
-	{
-		double p_s_tbb = 0.0, p_a_tbb = 0.0;
-		double tmp;
-		
-		for (int i2 = 1; i2 < n2-1; i2++) {
-			for (int i1 = 1; i1 < n1-1; i1++) {
-				p_s_tbb = p_s_tbb + r[i3][i2][i1] * r[i3][i2][i1];
-				tmp = fabs(r[i3][i2][i1]);
-				if (tmp > p_a_tbb) p_a_tbb = tmp;
-			}
-		}
-		
-		my_m.lock();
-		p_s += p_s_tbb;
-		if(p_a_tbb > p_a) p_a = p_a_tbb;
-		my_m.unlock();
-	});
-	
-	if(TIMERS_ENABLED == TRUE) timer_stop(T_STL);
-	
+
+	for (i3 = 1; i3 < n3-1; i3++) {
+    	for (i2 = 1; i2 < n2-1; i2++) {
+            for (i1 = 1; i1 < n1-1; i1++) {
+        		p_s = p_s + r[i3][i2][i1] * r[i3][i2][i1];
+        		tmp = fabs(r[i3][i2][i1]);
+        		if (tmp > p_a) p_a = tmp;
+        		}
+    	}
+  }
+
+
 	s += p_s;
 	if (p_a > *rnmu) *rnmu = p_a;
-	
-	*/
-	
-	
+
 	*rnm2 = sqrt(s/(double)n);
 	s = 0.0;
-	
+}
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void rep_nrm(double ***u, int n1, int n2, int n3, char *title, int kk) {
-	
+static void rep_nrm( dash::NArray<double, 3> &u, int n1, int n2, int n3, char *title, int kk) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c	 report on norm
 	c-------------------------------------------------------------------*/
-	
+
 	double rnm2, rnmu;
 	norm2u3(u,n1,n2,n3,&rnm2,&rnmu,nx[kk],ny[kk],nz[kk]);
-	printf(" Level%2d in %8s: norms =%21.14e%21.14e\n", kk, title, rnm2, rnmu);
+	if(dash::myid() == 0) printf(" Level%2d in %8s: norms =%21.14e%21.14e\n", kk, title, rnm2, rnmu);
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void comm3(double ***u, int n1, int n2, int n3) {
-	
+static void comm3( dash::NArray<double, 3> &u, int n1, int n2, int n3) {
+	if(dash::myid() == 0) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
-	c	 comm3 organizes the communication on all borders 
+	c	 comm3 organizes the communication on all borders
 	c-------------------------------------------------------------------*/
-	
-	if(TIMERS_ENABLED == TRUE) timer_start(T_STL);
-	/*
-	int v1[n3-2];
-	std::iota(&v1[0], &v1[n3-2], 1);
-	
+
 	// axis = 1
-	
-	std::for_each(pstl::execution::par, &v1[0], &v1[n3-2], [&u, &n2, &n1](int i3)
-	{
+
+	for(int i3 = 1; i3 < n3-1; i3++) {
 		for (int i2 = 1; i2 < n2-1; i2++) {
 			u[i3][i2][n1-1] = u[i3][i2][1];
 			u[i3][i2][0] = u[i3][i2][n1-2];
 		}
-	});
-	*/
-	std::for_each(pstl::execution::par, &u[1], &u[n3-1], [&n2, &n1](double **u)
-	{
-		for (int i2 = 1; i2 < n2-1; i2++) {
-			u[i2][n1-1] = u[i2][1];
-			u[i2][0] = u[i2][n1-2];
-		}
-	});//, "comm3");
-	
+	}
+
 	// axis = 2
-	/*
-	std::for_each(pstl::execution::par, &v1[0], &v1[n3-2], [&u, &n2, &n1](int i3)
-	{
+
+	for(int i3 = 1; i3 < n3-1; i3++) {
 		for (int i1 = 0; i1 < n1; i1++) {
 			u[i3][n2-1][i1] = u[i3][1][i1];
 			u[i3][0][i1] = u[i3][n2-2][i1];
 		}
-	});*/
-	
-	std::for_each(pstl::execution::par, &u[1], &u[n3-1], [&n2, &n1](double **u)
-	{
-		for (int i1 = 0; i1 < n1; i1++) {
-			u[n2-1][i1] = u[1][i1];
-			u[0][i1] = u[n2-2][i1];
-		}
-	});//, "comm3");
-	
-	int v2[n2];
-	std::iota(&v2[0], &v2[n2], 0);
-	
+	}
+
 	// axis = 3
-	
-	std::for_each(pstl::execution::par, &v2[0], &v2[n2], [&u, &n3, &n1](int i2)
-	{
+
+	for(int i2 = 0; i2 < n2; i2++) {
 		for (int i1 = 0; i1 < n1; i1++) {
 			u[n3-1][i2][i1] = u[1][i2][i1];
 			u[0][i2][i1] = u[n3-2][i2][i1];
 		}
-	});//, "comm3");
-	
-	if(TIMERS_ENABLED == TRUE) timer_stop(T_STL);
+	}
+
+}
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void zran3(double ***z, int n1, int n2, int n3, int nx, int ny, int k) {
-	
+static void zran3( dash::NArray<double, 3> &z, int n1, int n2, int n3, int nx, int ny, int k) {
+	if(dash::myid() == 0) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c	 zran3  loads +1 at ten randomly chosen points,
 	c	 loads -1 at a different ten random points,
 	c	 and zero elsewhere.
 	c-------------------------------------------------------------------*/
-	
+
 	#define MM	10
 	#define	A	pow(5.0,13)
 	#define	X	314159265.e0
-	
+
 	int i0, m0, m1;
 	/*int i1, i2, i3, d1, e1, e2, e3;*/
 	int i1, i2, i3, d1, e2, e3;
 	double xx, x0, x1, a1, a2, ai;
-	
+
 	double ten[MM][2], best;
 	int i, j1[MM][2], j2[MM][2], j3[MM][2];
-	
-	
+
+
 	/*double rdummy;*/
-	
+
 	a1 = power( A, nx );
 	a2 = power( A, nx*ny );
-	
+
 	zero3(z,n1,n2,n3);
-	
+
 	i = is1-1+nx*(is2-1+ny*(is3-1));
-	
+
 	ai = power( A, i );
 	d1 = ie1 - is1 + 1;
 	/*e1 = ie1 - is1 + 2;*/
@@ -1046,26 +912,29 @@ static void zran3(double ***z, int n1, int n2, int n3, int nx, int ny, int k) {
 	e3 = ie3 - is3 + 2;
 	x0 = X;
 	/*rdummy = */randlc( &x0, ai );
-	
+
 	for (i3 = 1; i3 < e3; i3++) {
 		x1 = x0;
 		for (i2 = 1; i2 < e2; i2++) {
 			xx = x1;
-			vranlc( d1, &xx, A, &(z[i3][i2][0]));
+			double tmp[d1];
+			vranlc( d1, &xx, A, tmp);
+			for(int i = 0; i < d1; i++) z[i3][i2][i] = tmp[i];
+			// vranlc( d1, &xx, A, (double *) &(z[i3][i2][0]));
 			/*rdummy = */randlc( &x1, a1 );
 		}
 		/*rdummy = */randlc( &x0, a2 );
 	}
-	
+
 	/*--------------------------------------------------------------------
 	c	 call comm3(z,n1,n2,n3)
 	c	 call showall(z,n1,n2,n3)
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c	 each processor looks for twenty candidates
 	c-------------------------------------------------------------------*/
-	
+
 	for (i = 0; i < MM; i++) {
 		ten[i][1] = 0.0;
 		j1[i][1] = 0;
@@ -1096,7 +965,7 @@ static void zran3(double ***z, int n1, int n2, int n3, int nx, int ny, int k) {
 			}
 		}
 	}
-	
+
 	/*--------------------------------------------------------------------
 	c	 Now which of these are globally best?
 	c-------------------------------------------------------------------*/
@@ -1135,7 +1004,7 @@ static void zran3(double ***z, int n1, int n2, int n3, int nx, int ny, int k) {
 	}
 	m1 = i1+1;
 	m0 = i0+1;
-	
+
 	/* printf(" negative charges at");
 	for (i = 0; i < MM; i++) {
 		if (i%5 == 0) printf("\n");
@@ -1163,9 +1032,9 @@ static void zran3(double ***z, int n1, int n2, int n3, int nx, int ny, int k) {
 		printf(" %4d", jg[0][i][1]);
 	}
 	printf("\n");*/
-	
+
 	zero3(z, n1, n2, n3);
-	
+
 	for (i = MM-1; i >= m0; i--) {
 		z[j3[i][0]][j2[i][0]][j1[i][0]] = -1.0;
 	}
@@ -1173,48 +1042,50 @@ static void zran3(double ***z, int n1, int n2, int n3, int nx, int ny, int k) {
 		z[j3[i][1]][j2[i][1]][j1[i][1]] = 1.0;
 	}
 	comm3(z,n1,n2,n3);
-	
+
 	/*--------------------------------------------------------------------
 	c	 call showall(z,n1,n2,n3)
 	c-------------------------------------------------------------------*/
+}
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void showall(double ***z, int n1, int n2, int n3) {
-	
-	/*--------------------------------------------------------------------
-	c-------------------------------------------------------------------*/
-	
-	int i1,i2,i3;
-	int m1, m2, m3;
-	
-	m1 = min(n1,18);
-	m2 = min(n2,14);
-	m3 = min(n3,18);
-	
-	printf("\n");
-	for (i3 = 0; i3 < m3; i3++) {
-		for (i1 = 0; i1 < m1; i1++) {
-			for (i2 = 0; i2 < m2; i2++) {
-			  printf("%6.3f", z[i3][i2][i1]);
+static void showall( dash::NArray<double, 3> &z, int n1, int n2, int n3) {
+	if(dash::myid() == 0) {
+		/*--------------------------------------------------------------------
+		c-------------------------------------------------------------------*/
+
+		int i1,i2,i3;
+		int m1, m2, m3;
+
+		m1 = min(n1,18);
+		m2 = min(n2,14);
+		m3 = min(n3,18);
+
+		printf("\n");
+		for (i3 = 0; i3 < m3; i3++) {
+			for (i1 = 0; i1 < m1; i1++) {
+				for (i2 = 0; i2 < m2; i2++) {
+				  printf("%6.3f", (double) z[i3][i2][i1]);
+				}
+				printf("\n");
 			}
-			printf("\n");
+			printf(" - - - - - - - \n");
 		}
-		printf(" - - - - - - - \n");
+		printf("\n");
 	}
-	printf("\n");
 }
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
 static double power( double a, int n ) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c	 power  raises an integer, disguised as a double
 	c	 precision real, to an integer power
@@ -1223,17 +1094,17 @@ static double power( double a, int n ) {
 	int nj;
 	/* double rdummy;*/
 	double power;
-	
+
 	power = 1.0;
 	nj = n;
 	aj = a;
-	
+
 	while (nj != 0) {
 		if( (nj%2) == 1 ) /*rdummy =  */randlc( &power, aj );
 		/*rdummy = */randlc( &aj, aj );
 		nj = nj/2;
 	}
-	
+
 	return (power);
 }
 
@@ -1241,10 +1112,10 @@ static double power( double a, int n ) {
 c-------------------------------------------------------------------*/
 
 static void bubble( double ten[M][2], int j1[M][2], int j2[M][2], int j3[M][2], int m, int ind ) {
-	
+
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
+
 	/*--------------------------------------------------------------------
 	c	 bubble		does a bubble sort in direction dir
 	c-------------------------------------------------------------------*/
@@ -1256,15 +1127,15 @@ static void bubble( double ten[M][2], int j1[M][2], int j2[M][2], int j3[M][2], 
 				temp = ten[i+1][ind];
 				ten[i+1][ind] = ten[i][ind];
 				ten[i][ind] = temp;
-				
+
 				j_temp = j1[i+1][ind];
 				j1[i+1][ind] = j1[i][ind];
 				j1[i][ind] = j_temp;
-				
+
 				j_temp = j2[i+1][ind];
 				j2[i+1][ind] = j2[i][ind];
 				j2[i][ind] = j_temp;
-				
+
 				j_temp = j3[i+1][ind];
 				j3[i+1][ind] = j3[i][ind];
 				j3[i][ind] = j_temp;
@@ -1275,19 +1146,19 @@ static void bubble( double ten[M][2], int j1[M][2], int j2[M][2], int j3[M][2], 
 		} else {
 		for (i = 0; i < m-1; i++) {
 			if ( ten[i][ind] < ten[i+1][ind]){
-				
+
 				temp = ten[i+1][ind];
 				ten[i+1][ind] = ten[i][ind];
 				ten[i][ind] = temp;
-				
+
 				j_temp = j1[i+1][ind];
 				j1[i+1][ind] = j1[i][ind];
 				j1[i][ind] = j_temp;
-				
+
 				j_temp = j2[i+1][ind];
 				j2[i+1][ind] = j2[i][ind];
 				j2[i][ind] = j_temp;
-				
+
 				j_temp = j3[i+1][ind];
 				j3[i+1][ind] = j3[i][ind];
 				j3[i][ind] = j_temp;
@@ -1301,38 +1172,20 @@ static void bubble( double ten[M][2], int j1[M][2], int j2[M][2], int j3[M][2], 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
 
-static void zero3(double ***z, int n1, int n2, int n3) {
-	
+static void zero3( dash::NArray<double, 3> &z, int n1, int n2, int n3) {
+	if(dash::myid() == 0) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
-	
-	if(TIMERS_ENABLED == TRUE) timer_start(T_STL);
-	
-	
-	std::for_each(pstl::execution::par, &z[0], &z[n3], [&n1, &n2](double **z)
-	{
-		for (int i2 = 0; i2 < n2; i2++) {
-			for (int i1 = 0; i1 < n1; i1++) {
-				z[i2][i1] = 0.0;
-			}
-		}
-	});//, "zero3");
-	
-	
-	/*
-	int v[n3];
-	std::iota(&v[0], &v[n3], 0);
-	
-	std::for_each(pstl::execution::par, &v[0], &v[n3], [&z, &n1, &n2](int i3)
-	{
+
+	for(int i3 = 0; i3 < n3; i3++) {
 		for (int i2 = 0; i2 < n2; i2++) {
 			for (int i1 = 0; i1 < n1; i1++) {
 				z[i3][i2][i1] = 0.0;
 			}
 		}
-	});
-	*/
-	if(TIMERS_ENABLED == TRUE) timer_stop(T_STL);
+	}
+
+}
 }
 
 /*---- end of program ------------------------------------------------*/
