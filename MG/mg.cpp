@@ -581,7 +581,7 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 c-------------------------------------------------------------------*/
 
 static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash::NArray<double, 3> &r, int n1, int n2, int n3, double a[4], int k ) {
-	if(dash::myid() == 0) {
+	dash::barrier();
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -597,17 +597,48 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 	c	 Note that this vectorizes, and is also fine for cache
 	c	 based machines.
 	c-------------------------------------------------------------------*/
-
 	double u1[M], u2[M];
-	for(int i3 = 1; i3 < n3-1; i3++) {
+
+	int myid = dash::myid();
+
+	auto pattern = r.pattern();
+	auto local_beg_gidx = pattern.coords(pattern.global(0));
+	auto local_end_gidx = pattern.coords(pattern.global(pattern.local_size()-1));
+
+	int topcoord = local_beg_gidx[0]-1;
+	int bottomcoord = local_end_gidx[0]+1;
+	int z_ext = u.local.extent(0);
+
+	double topplane[n2][n1];
+	double bottomplane[n2][n1];
+
+	if(bottomcoord < n3) {
+
+		for(int i2 = 0; i2 < n2; i2++) {
+			for(int i1 = 0; i1 < n1; i1++) {
+				bottomplane[i2][i1] = u(bottomcoord,i2,i1);
+			}
+		}
+	}
+
+	if(topcoord > 0) {
+
+		for(int i2 = 0; i2 < n2; i2++) {
+			for(int i1 = 0; i1 < n1; i1++) {
+				topplane[i2][i1] = u(topcoord,i2,i1);
+			}
+		}
+	}
+
+	for(int i3 = 1; i3 < z_ext-1; i3++) {
 		for (int i2 = 1; i2 < n2-1; i2++) {
 			for (int i1 = 0; i1 < n1; i1++) {
-				u1[i1] = u[i3][i2-1][i1] + u[i3][i2+1][i1] + u[i3-1][i2][i1] + u[i3+1][i2][i1];
-				u2[i1] = u[i3-1][i2-1][i1] + u[i3-1][i2+1][i1] + u[i3+1][i2-1][i1] + u[i3+1][i2+1][i1];
+				u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + u.local(i3-1,i2,i1) + u.local(i3+1,i2,i1);
+				u2[i1] = u.local(i3-1,i2-1,i1) + u.local(i3-1,i2+1,i1) + u.local(i3+1,i2-1,i1) + u.local(i3+1,i2+1,i1);
 			}
 			for (int i1 = 1; i1 < n1-1; i1++) {
-				r[i3][i2][i1] = v[i3][i2][i1]
-				 - a[0] * u[i3][i2][i1]
+				r.local(i3,i2,i1) = v.local(i3,i2,i1)
+				 - a[0] * u.local(i3,i2,i1)
 				//--------------------------------------------------------------------
 				//c  Assume a(1) = 0	  (Enable 2 lines below if a(1) not= 0)
 				//c-------------------------------------------------------------------
@@ -620,7 +651,75 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 		}
 	}
 
-} dash::barrier();
+	if(z_ext > 1) {
+		if(bottomcoord < n3) {
+			int i3 = z_ext-1;
+
+			for (int i2 = 1; i2 < n2-1; i2++) {
+				for (int i1 = 0; i1 < n1; i1++) {
+					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + u.local(i3-1,i2,i1) + bottomplane[i2][i1];
+					u2[i1] = u.local(i3-1,i2-1,i1) + u.local(i3-1,i2+1,i1) + bottomplane[i2-1][i1] + bottomplane[i2+1][i1];
+				}
+				for (int i1 = 1; i1 < n1-1; i1++) {
+					r.local(i3,i2,i1) = v.local(i3,i2,i1)
+					 - a[0] * u.local(i3,i2,i1)
+					//--------------------------------------------------------------------
+					//c  Assume a(1) = 0	  (Enable 2 lines below if a(1) not= 0)
+					//c-------------------------------------------------------------------
+					//c > - a(1) * ( u(i1-1,i2,i3) + u(i1+1,i2,i3)
+					//c > + u1(i1) )
+					//c-------------------------------------------------------------------
+					 - a[2] * ( u2[i1] + u1[i1-1] + u1[i1+1] )
+					 - a[3] * ( u2[i1-1] + u2[i1+1] );
+				}
+			}
+		}
+		if(topcoord > 0) {
+			int i3 = 0;
+
+			for (int i2 = 1; i2 < n2-1; i2++) {
+				for (int i1 = 0; i1 < n1; i1++) {
+					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + topplane[i2][i1] + u.local(i3+1,i2,i1);
+					u2[i1] = topplane[i2-1][i1] + topplane[i2+1][i1] + u.local(i3+1,i2-1,i1) + u.local(i3+1,i2+1,i1);
+				}
+				for (int i1 = 1; i1 < n1-1; i1++) {
+					r.local(i3,i2,i1) = v.local(i3,i2,i1)
+					 - a[0] * u.local(i3,i2,i1)
+					//--------------------------------------------------------------------
+					//c  Assume a(1) = 0	  (Enable 2 lines below if a(1) not= 0)
+					//c-------------------------------------------------------------------
+					//c > - a(1) * ( u(i1-1,i2,i3) + u(i1+1,i2,i3)
+					//c > + u1(i1) )
+					//c-------------------------------------------------------------------
+					 - a[2] * ( u2[i1] + u1[i1-1] + u1[i1+1] )
+					 - a[3] * ( u2[i1-1] + u2[i1+1] );
+				}
+			}
+		}
+	} else {
+		if(0 < topcoord && bottomcoord < n3) {
+			int i3 = 0;
+			for (int i2 = 1; i2 < n2-1; i2++) {
+				for (int i1 = 0; i1 < n1; i1++) {
+					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + topplane[i2][i1] + bottomplane[i2][i1];
+					u2[i1] = topplane[i2-1][i1] + topplane[i2+1][i1] + bottomplane[i2-1][i1] + bottomplane[i2+1][i1];
+				}
+				for (int i1 = 1; i1 < n1-1; i1++) {
+					r.local(i3,i2,i1) = v.local(i3,i2,i1)
+					 - a[0] * u.local(i3,i2,i1)
+					//--------------------------------------------------------------------
+					//c  Assume a(1) = 0	  (Enable 2 lines below if a(1) not= 0)
+					//c-------------------------------------------------------------------
+					//c > - a(1) * ( u(i1-1,i2,i3) + u(i1+1,i2,i3)
+					//c > + u1(i1) )
+					//c-------------------------------------------------------------------
+					 - a[2] * ( u2[i1] + u1[i1-1] + u1[i1+1] )
+					 - a[3] * ( u2[i1-1] + u2[i1+1] );
+				}
+			}
+		}
+	}
+
 	/*--------------------------------------------------------------------
 	c	 exchange boundary data
 	c--------------------------------------------------------------------*/
