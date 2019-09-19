@@ -20,6 +20,7 @@
 #include <libdash.h>
 
 #include <vector>
+#include <array>
 
 #include <iostream>
 #include "npb-CPP.hpp"
@@ -218,6 +219,7 @@ int main(int argc, char *argv[]) {
 	zero3(u[lt],n1,n2,n3);
 	dash::barrier();
 	zran3(v,n1,n2,n3,nx[lt],ny[lt],lt);
+	dash::barrier();
 
 	norm2u3(v,n1,n2,n3,&rnm2,&rnmu,nx[lt],ny[lt],nz[lt]);
 
@@ -738,7 +740,6 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 c-------------------------------------------------------------------*/
 
 static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::NArray<double, 3> &s, int m1j, int m2j, int m3j, int k ) {
-	if(dash::myid() == 0) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -774,10 +775,44 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 
 	int j2, j1, i3, i2, i1;
 	double x1[M], y1[M], x2, y2;
+	// double r_local[3][r.extent(1)][r.extent(2)];
+	std::vector<std::vector<std::vector<double> > > r_local(3);
+	for(int i = 0; i < 3; i++) {
+		r_local[i] = std::vector<std::vector<double> >(r.extent(1));
+		for(int j = 0; j < r.extent(1); j++) {
+			r_local[i][j] = std::vector<double>(r.extent(2));
+		}
+	}
 
-	for(int j3 = 1; j3 < m3j-1; j3++) {
+	auto pattern = s.pattern();
+	auto local_beg_gidx = pattern.coords(pattern.global(0));
+  auto local_end_gidx = pattern.coords(pattern.global(pattern.local_size()-1));
+
+	int start = 0;
+	if(local_beg_gidx[0] == 0) start++;
+
+	int end = s.local.extent(0);
+	if(local_end_gidx[0] == s.extent(0)-1) end--;
+
+	for(int j3l = start; j3l < end; j3l++) {
+		int j3 = local_beg_gidx[0]+j3l;
 		i3 = 2*j3-d3;
 		//C	i3 = 2*j3-1
+
+		///////Copy////
+		for(int i = 0; i < 3; i++) {
+			 if(i == 0 && j3l-start > 0) {
+			 	r_local[0] = r_local[2];
+			 } else {
+				for(int j = 0; j < r.extent(1); j++) {
+					for(int k = 0; k < r.extent(2); k++) {
+						r_local[i][j][k] = r(i3+i,j,k);
+					}
+				}
+			 }
+		}
+		/////End copy
+
 		for (j2 = 1; j2 < m2j-1; j2++) {
 			i2 = 2*j2-d2;
 			//C  i2 = 2*j2-1
@@ -785,25 +820,24 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 			for (j1 = 1; j1 < m1j; j1++) {
 				i1 = 2*j1-d1;
 			//C	i1 = 2*j1-1
-				x1[i1] = r[i3+1][i2][i1] + r[i3+1][i2+2][i1] + r[i3][i2+1][i1] + r[i3+2][i2+1][i1];
-				y1[i1] = r[i3][i2][i1] + r[i3+2][i2][i1] + r[i3][i2+2][i1] + r[i3+2][i2+2][i1];
+				x1[i1] = r_local[1][i2][i1] + r_local[1][i2+2][i1] + r_local[0][i2+1][i1] + r_local[2][i2+1][i1];
+				y1[i1] = r_local[0][i2][i1] + r_local[2][i2][i1] + r_local[0][i2+2][i1] + r_local[2][i2+2][i1];
 			}
 
 			for (j1 = 1; j1 < m1j-1; j1++) {
 				i1 = 2*j1-d1;
 			//C	i1 = 2*j1-1
-				y2 = r[i3][i2][i1+1] + r[i3+2][i2][i1+1] + r[i3][i2+2][i1+1] + r[i3+2][i2+2][i1+1];
-				x2 = r[i3+1][i2][i1+1] + r[i3+1][i2+2][i1+1] + r[i3][i2+1][i1+1] + r[i3+2][i2+1][i1+1];
-				s[j3][j2][j1] =
-					0.5 * r[i3+1][i2+1][i1+1]
-					+ 0.25 * ( r[i3+1][i2+1][i1] + r[i3+1][i2+1][i1+2] + x2)
+				y2 = r_local[0][i2][i1+1] + r_local[2][i2][i1+1] + r_local[0][i2+2][i1+1] + r_local[2][i2+2][i1+1];
+				x2 = r_local[1][i2][i1+1] + r_local[1][i2+2][i1+1] + r_local[0][i2+1][i1+1] + r_local[2][i2+1][i1+1];
+				s.local(j3l,j2,j1) =
+					0.5 * r_local[1][i2+1][i1+1]
+					+ 0.25 * ( r_local[1][i2+1][i1] + r_local[1][i2+1][i1+2] + x2)
 					+ 0.125 * ( x1[i1] + x1[i1+2] + y2)
 					+ 0.0625 * ( y1[i1] + y1[i1+2] );
 			}
 		}
 	}
-}
-	dash::barrier();
+	
 	comm3(s,m1j,m2j,m3j);
 
 	if (debug_vec[0] >= 1 ) {
@@ -970,7 +1004,6 @@ static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash:
 c-------------------------------------------------------------------*/
 
 static void norm2u3( dash::NArray<double, 3> &r, int n1, int n2, int n3, double *rnm2, double *rnmu, int nx, int ny, int nz) {
-	if(dash::myid() == 0) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -982,30 +1015,41 @@ static void norm2u3( dash::NArray<double, 3> &r, int n1, int n2, int n3, double 
 	c	 and eighth weight at the corners) for inhomogeneous boundaries.
 	c-------------------------------------------------------------------*/
 
-	static double s = 0.0;
+	double s, a;
 	double tmp;
   int i3, i2, i1, n;
-  double p_s = 0.0, p_a = 0.0;
+	dash::Array<double> p_s(dash::size());
+	dash::Array<double> p_a(dash::size());
+
+	auto pattern = r.pattern();
+	auto local_beg_gidx = pattern.coords(pattern.global(0));
+  auto local_end_gidx = pattern.coords(pattern.global(pattern.local_size()-1));
+
+	int start = 0;
+	if(local_beg_gidx[0] == 0) start++;
+
+	int end = r.local.extent(0);
+	if(local_end_gidx[0] == n3-1) end--;
 
 	n = nx*ny*nz;
 
-	for (i3 = 1; i3 < n3-1; i3++) {
+	for (i3 = start; i3 < end; i3++) {
     	for (i2 = 1; i2 < n2-1; i2++) {
             for (i1 = 1; i1 < n1-1; i1++) {
-        		p_s = p_s + r[i3][i2][i1] * r[i3][i2][i1];
-        		tmp = fabs(r[i3][i2][i1]);
-        		if (tmp > p_a) p_a = tmp;
+        		p_s.local[0] = p_s.local[0] + r.local(i3,i2,i1) * r.local(i3,i2,i1);
+        		tmp = fabs(r.local(i3,i2,i1));
+        		if (tmp > p_a.local[0]) p_a.local[0] = tmp;
         		}
     	}
   }
 
-
-	s += p_s;
-	if (p_a > *rnmu) *rnmu = p_a;
+	dash::barrier();
+	s = dash::reduce(p_s.begin(), p_s.end(), 0.0, std::plus<double>());
+	a = dash::reduce(p_a.begin(), p_a.end(), 0.0, std::plus<double>());
+	if (a > *rnmu) *rnmu = a;
 
 	*rnm2 = sqrt(s/(double)n);
-	s = 0.0;
-}
+
 }
 
 /*--------------------------------------------------------------------
