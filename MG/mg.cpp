@@ -418,6 +418,7 @@ static void mg3P(std::vector<dash::NArray<double, 3> > &u, dash::NArray<double, 
 c-------------------------------------------------------------------*/
 
 static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n1, int n2, int n3, double c[4], int k) {
+		// if(0 == dash::myid()) printf("psinv\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -566,6 +567,7 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 c-------------------------------------------------------------------*/
 
 static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash::NArray<double, 3> &r, int n1, int n2, int n3, double a[4], int k ) {
+		// if(0 == dash::myid()) printf("resid\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -720,6 +722,7 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 c-------------------------------------------------------------------*/
 
 static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::NArray<double, 3> &s, int m1j, int m2j, int m3j, int k ) {
+		// if(0 == dash::myid()) printf("rprj3\n");
 	/*--------------------------------------------------------------------
 		c-------------------------------------------------------------------*/
 
@@ -764,6 +767,8 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 		auto r_local_beg_gidx = r_pattern.coords(r_pattern.global(0));
 	  auto r_local_end_gidx = r_pattern.coords(r_pattern.global(r_pattern.local_size()-1));
 		int r_offset = r_local_beg_gidx[0];
+		int r_x = (int) r.extent(2);
+		int r_y = (int) r.extent(1);
 
 		int start = 0;
 		if(s_local_beg_gidx[0] == 0) start++;
@@ -772,26 +777,34 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 		if(s_local_end_gidx[0] == s.extent(0)-1) end--;
 
 		int r_planes = 2*(end-start)+1;
-		double r_local[r_planes][(int) r.extent(1)][(int) r.extent(2)];
+		// printf("init %d * %d * %d\n", r_planes,(int) r.extent(1),(int) r.extent(2));
+		double r_local[r_planes][r_y][r_x];
+		// double ***r_local = (double ***)malloc(r_planes * sizeof(double **));
+		// for (int i=0; i<r_planes; i++) {
+		// 	 r_local[i] = (double **)malloc(r_y * sizeof(double *));
+		// 	 for(int j=0; j<r_y; j++) r_local[i][j] = (double *)malloc(r_x * sizeof(double));
+		// }
+		// printf("Done. Unit %d. Start %d, end %d.\n", (int) dash::myid(), start, end);
 		int r_idx = 0;
-		int r_psize = r.extent(1)*r.extent(2);
+		int r_psize = r_y*r_x;
 
 		dash::Future<double*> futs[r_planes];
-
+		
 		for(int j3l = start; j3l < end; j3l++){
 			int j3 = s_local_beg_gidx[0]+j3l;
 			i3 = 2*j3-d3;
 			futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
 			// if(r(i3,0,0).is_local()) {
-			// 	std::copy(r.lbegin()+r_psize*(i3-r_offset), r.lbegin()+r_psize*(i3-r_offset+1), &r_local[r_idx][0][0]);
+				// std::copy(r.lbegin()+r_psize*(i3-r_offset), r.lbegin()+r_psize*(i3-r_offset+1), &r_local[r_idx][0][0]);
 			// } else {
-				// dash::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
+			// std::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[0][0][0]);
 			// }
 			r_idx++;
 			futs[r_idx] = dash::copy_async(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[r_idx][0][0]);
-			// dash::copy(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[r_idx][0][0]);
+			// std::copy(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[0][0][0]);
 			r_idx++;
 		}
+
 
 		if(start < end) {
 			i3 = 2*(s_local_beg_gidx[0]+end)-d3;
@@ -803,6 +816,7 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 			futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*i3+1, &r_local[r_idx][0][0]);
 			r_idx = 0;
 		}
+		// printf("Copied.\n");
 
 		for(int j3l = start; j3l < end; j3l++) {
 			int j3 = s_local_beg_gidx[0]+j3l;
@@ -843,6 +857,7 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 			}
 			r_idx = r_idx + 2;
 		}
+		// free(r_local);
 
 		comm3(s,m1j,m2j,m3j);
 
@@ -859,6 +874,7 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 c-------------------------------------------------------------------*/
 
 static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash::NArray<double, 3> &u, int n1, int n2, int n3, int k ) {
+	// if(0 == dash::myid()) printf("interp\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -898,17 +914,27 @@ static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash:
 		if((int) z_planes > 0) {
 			int z_local_size = z_planes-start+((z_planes+start)%2);
 			double z_local[z_local_size][mm2][mm1];
+			dash::Future<double*> futs[z_local_size];
 
 			for(int j3 = start; j3 < z_planes; j3+=2) {
 				int i3 = (z_offset + j3)/2;
-				std::copy(z.begin() + z_size*i3, z.begin() + z_size*(i3+1), &z_local[j3-start][0][0]);
-				std::copy(z.begin() + z_size*(i3+1), z.begin() + z_size*(i3+2), &z_local[j3-start+1][0][0]);
+				futs[j3-start] = dash::copy_async(z.begin() + z_size*i3, z.begin() + z_size*(i3+1), &z_local[j3-start][0][0]);
+				if(i3+2 == (int) z.extent(0)) {
+					 // printf("Trying %d-%d of %d\n", (i3+1), (i3+2), (int) z.extent(0));
+					std::copy(z.begin() + z_size*(i3+1), z.end(), &z_local[j3-start+1][0][0]);
+					futs[j3-start+1] = dash::copy_async(z.begin() + z_size*(i3+1), z.begin() + z_size*(i3+1)+1, &z_local[j3-start+1][0][0]);
+				} else {
+					futs[j3-start+1] = dash::copy_async(z.begin() + z_size*(i3+1), z.begin() + z_size*(i3+2), &z_local[j3-start+1][0][0]);
+				}
 				//dash::copy gets
 				//[    3 ERROR ] [ 11302 ] GlobPtrBase.h            :264  | GlobPtr.increment                            | offset goes beyond the global memory end 1
 			}
 
 			for(int j3 = start; j3 < z_planes; j3+=2) {
 				// int i3 = (z_offset + j3)/2;
+				futs[j3-start].wait();
+				futs[j3-start+1].wait();
+
 				for (int i2 = 0; i2 < mm2-1; i2++) {
 					for (int i1 = 0; i1 < mm1; i1++) {
 						z1[i1] = z_local[j3-start][i2+1][i1] + z_local[j3-start][i2][i1];
@@ -959,6 +985,7 @@ static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash:
 			t3 = 0;
 		}
 		if( 0 == dash::myid()) {
+			printf("u.extent(0) = %d, z.extent(1) = %d\n", (int) u.extent(0), (int) z.extent(0));
 
 		for(int i3 = d3; i3 <= mm3-1; i3++) {
 			for (int i2 = d2; i2 <= mm2-1; i2++) {
@@ -1104,6 +1131,7 @@ static void rep_nrm( dash::NArray<double, 3> &u, int n1, int n2, int n3, char *t
 c-------------------------------------------------------------------*/
 
 static void comm3( dash::NArray<double, 3> &u, int n1, int n2, int n3) {
+		// if(0 == dash::myid()) printf("comm3\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
