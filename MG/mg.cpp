@@ -1,21 +1,15 @@
 /*--------------------------------------------------------------------
-
 	Information on NAS Parallel Benchmarks is available at:
-
 	http://www.nas.nasa.gov/Software/NPB/
-
 	Authors: E. Barszcz
 		P. Frederickson
 		A. Woo
 		M. Yarrow
-
-	STL version:
+	DASH version:
 	Nicco Mietzsch <nicco.mietzsch@campus.lmu.de>
-
 	CPP and OpenMP version:
 			Dalvan Griebler <dalvangriebler@gmail.com>
 			Júnior Löff <loffjh@gmail.com>
-
 --------------------------------------------------------------------*/
 #include <libdash.h>
 
@@ -215,11 +209,9 @@ int main(int argc, char *argv[]) {
 	for (l = lt; l >=1; l--) {
 		r[l].allocate(m3[l],m2[l],m1[l], distspec);
 	}
-	dash::barrier();
+
 	zero3(u[lt],n1,n2,n3);
-	dash::barrier();
 	zran3(v,n1,n2,n3,nx[lt],ny[lt],lt);
-	dash::barrier();
 
 	norm2u3(v,n1,n2,n3,&rnm2,&rnmu,nx[lt],ny[lt],nz[lt]);
 
@@ -242,9 +234,8 @@ int main(int argc, char *argv[]) {
 	resid(u[lt],v,r[lt],n1,n2,n3,a,lt);
 
 	setup(&n1,&n2,&n3,lt);
-	dash::barrier();
+
 	zero3(u[lt],n1,n2,n3);
-	dash::barrier();
 	zran3(v,n1,n2,n3,nx[lt],ny[lt],lt);
 
 	if(dash::myid() == 0) {
@@ -396,9 +387,7 @@ static void mg3P(std::vector<dash::NArray<double, 3> > &u, dash::NArray<double, 
 	/*--------------------------------------------------------------------
 	c	 compute an approximate solution on the coarsest grid
 	c-------------------------------------------------------------------*/
-	dash::barrier();
 	zero3(u[k], m1[k], m2[k], m3[k]);
-	dash::barrier();
 	psinv(r[k], u[k], m1[k], m2[k], m3[k], c, k);
 
 	for (k = lb+1; k <= lt-1; k++) {
@@ -406,9 +395,7 @@ static void mg3P(std::vector<dash::NArray<double, 3> > &u, dash::NArray<double, 
 		/*--------------------------------------------------------------------
 		c prolongate from level k-1  to k
 		c-------------------------------------------------------------------*/
-		dash::barrier();
 		zero3(u[k], m1[k], m2[k], m3[k]);
-		dash::barrier();
 		interp(u[j], m1[j], m2[j], m3[j], u[k], m1[k], m2[k], m3[k], k);
 		/*--------------------------------------------------------------------
 		c compute residual for level k
@@ -461,22 +448,15 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 	double topplane[n2][n1];
 	double bottomplane[n2][n1];
 
-	if(bottomcoord < n3) {
+	dash::Future<double*> fut_top;
+	dash::Future<double*> fut_bot;
 
-		for(int i2 = 0; i2 < n2; i2++) {
-			for(int i1 = 0; i1 < n1; i1++) {
-				bottomplane[i2][i1] = r(bottomcoord,i2,i1);
-			}
-		}
+	if(topcoord >= 0 && z_ext > 0) {
+		fut_top = dash::copy_async(r.begin()+n2*n1*topcoord, r.begin()+n2*n1*(topcoord+1), &topplane[0][0]);
 	}
 
-	if(topcoord > 0) {
-
-		for(int i2 = 0; i2 < n2; i2++) {
-			for(int i1 = 0; i1 < n1; i1++) {
-				topplane[i2][i1] = r(topcoord,i2,i1);
-			}
-		}
+	if(bottomcoord < n3 && z_ext > 0) {
+		fut_bot = dash::copy_async(r.begin()+n2*n1*bottomcoord, r.begin()+n2*n1*(bottomcoord+1), &bottomplane[0][0]);
 	}
 
 	for(int i3 = 1; i3 < z_ext-1; i3++) {
@@ -500,29 +480,9 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 	}
 
 	if(z_ext > 1) {
-		if(bottomcoord < n3) {
-			int i3 = z_ext-1;
-
-			for (int i2 = 1; i2 < n2-1; i2++) {
-				for (int i1 = 0; i1 < n1; i1++) {
-					r1[i1] = r.local(i3,i2-1,i1) + r.local(i3,i2+1,i1) + r.local(i3-1,i2,i1) + bottomplane[i2][i1];
-					r2[i1] = r.local(i3-1,i2-1,i1) + r.local(i3-1,i2+1,i1) + bottomplane[i2-1][i1] + bottomplane[i2+1][i1];
-				}
-				for (int i1 = 1; i1 < n1-1; i1++) {
-					u.local(i3,i2,i1) = u.local(i3,i2,i1)
-					+ c[0] * r.local(i3,i2,i1)
-					+ c[1] * ( r.local(i3,i2,i1-1) + r.local(i3,i2,i1+1) + r1[i1] )
-					+ c[2] * ( r2[i1] + r1[i1-1] + r1[i1+1] );
-					//--------------------------------------------------------------------
-					//c  Assume c(3) = 0	(Enable line below if c(3) not= 0)
-					//c-------------------------------------------------------------------
-					//c > + c(3) * ( r2(i1-1) + r2(i1+1) )
-					//c-------------------------------------------------------------------
-				}
-			}
-		}
-		if(topcoord > 0) {
+		if(topcoord >= 0) {
 			int i3 = 0;
+			fut_top.wait();
 
 			for (int i2 = 1; i2 < n2-1; i2++) {
 				for (int i1 = 0; i1 < n1; i1++) {
@@ -542,9 +502,34 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 				}
 			}
 		}
+		if(bottomcoord < n3) {
+			int i3 = z_ext-1;
+			fut_bot.wait();
+
+			for (int i2 = 1; i2 < n2-1; i2++) {
+				for (int i1 = 0; i1 < n1; i1++) {
+					r1[i1] = r.local(i3,i2-1,i1) + r.local(i3,i2+1,i1) + r.local(i3-1,i2,i1) + bottomplane[i2][i1];
+					r2[i1] = r.local(i3-1,i2-1,i1) + r.local(i3-1,i2+1,i1) + bottomplane[i2-1][i1] + bottomplane[i2+1][i1];
+				}
+				for (int i1 = 1; i1 < n1-1; i1++) {
+					u.local(i3,i2,i1) = u.local(i3,i2,i1)
+					+ c[0] * r.local(i3,i2,i1)
+					+ c[1] * ( r.local(i3,i2,i1-1) + r.local(i3,i2,i1+1) + r1[i1] )
+					+ c[2] * ( r2[i1] + r1[i1-1] + r1[i1+1] );
+					//--------------------------------------------------------------------
+					//c  Assume c(3) = 0	(Enable line below if c(3) not= 0)
+					//c-------------------------------------------------------------------
+					//c > + c(3) * ( r2(i1-1) + r2(i1+1) )
+					//c-------------------------------------------------------------------
+				}
+			}
+		}
 	} else {
-		if(0 < topcoord && bottomcoord < n3) {
+		if(0 <= topcoord && bottomcoord < n3) {
 			int i3 = 0;
+			fut_top.wait();
+			fut_bot.wait();
+
 			for (int i2 = 1; i2 < n2-1; i2++) {
 				for (int i1 = 0; i1 < n1; i1++) {
 					r1[i1] = r.local(i3,i2-1,i1) + r.local(i3,i2+1,i1) + topplane[i2][i1] + bottomplane[i2][i1];
@@ -564,20 +549,20 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 			}
 		}
 	}
+		/*--------------------------------------------------------------------
+		c	 exchange boundary points
+		c-------------------------------------------------------------------*/
+		dash::barrier();
+		comm3(u,n1,n2,n3);
 
-	/*--------------------------------------------------------------------
-	c	 exchange boundary points
-	c-------------------------------------------------------------------*/
-	comm3(u,n1,n2,n3);
+		if (debug_vec[0] >= 1 ) {
+			rep_nrm(u,n1,n2,n3,(char*)"   psinv",k);
+		}
 
-	if (debug_vec[0] >= 1 ) {
-		rep_nrm(u,n1,n2,n3,(char*)"   psinv",k);
+		if ( debug_vec[3] >= k ) {
+			showall(u,n1,n2,n3);
+		}
 	}
-
-	if ( debug_vec[3] >= k ) {
-		showall(u,n1,n2,n3);
-	}
-}
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
@@ -614,22 +599,15 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 	double topplane[n2][n1];
 	double bottomplane[n2][n1];
 
-	if(bottomcoord < n3) {
+	dash::Future<double*> fut_top;
+	dash::Future<double*> fut_bot;
 
-		for(int i2 = 0; i2 < n2; i2++) {
-			for(int i1 = 0; i1 < n1; i1++) {
-				bottomplane[i2][i1] = u(bottomcoord,i2,i1);
-			}
-		}
+	if(topcoord >= 0 && z_ext > 0) {
+		fut_top = dash::copy_async(u.begin()+n2*n1*topcoord, u.begin()+n2*n1*(topcoord+1), &topplane[0][0]);
 	}
 
-	if(topcoord > 0) {
-
-		for(int i2 = 0; i2 < n2; i2++) {
-			for(int i1 = 0; i1 < n1; i1++) {
-				topplane[i2][i1] = u(topcoord,i2,i1);
-			}
-		}
+	if(bottomcoord < n3 && z_ext > 0) {
+		fut_bot = dash::copy_async(u.begin()+n2*n1*bottomcoord, u.begin()+n2*n1*(bottomcoord+1), &bottomplane[0][0]);
 	}
 
 	for(int i3 = 1; i3 < z_ext-1; i3++) {
@@ -654,30 +632,9 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 	}
 
 	if(z_ext > 1) {
-		if(bottomcoord < n3) {
-			int i3 = z_ext-1;
-
-			for (int i2 = 1; i2 < n2-1; i2++) {
-				for (int i1 = 0; i1 < n1; i1++) {
-					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + u.local(i3-1,i2,i1) + bottomplane[i2][i1];
-					u2[i1] = u.local(i3-1,i2-1,i1) + u.local(i3-1,i2+1,i1) + bottomplane[i2-1][i1] + bottomplane[i2+1][i1];
-				}
-				for (int i1 = 1; i1 < n1-1; i1++) {
-					r.local(i3,i2,i1) = v.local(i3,i2,i1)
-					 - a[0] * u.local(i3,i2,i1)
-					//--------------------------------------------------------------------
-					//c  Assume a(1) = 0	  (Enable 2 lines below if a(1) not= 0)
-					//c-------------------------------------------------------------------
-					//c > - a(1) * ( u(i1-1,i2,i3) + u(i1+1,i2,i3)
-					//c > + u1(i1) )
-					//c-------------------------------------------------------------------
-					 - a[2] * ( u2[i1] + u1[i1-1] + u1[i1+1] )
-					 - a[3] * ( u2[i1-1] + u2[i1+1] );
-				}
-			}
-		}
-		if(topcoord > 0) {
+		if(topcoord >= 0) {
 			int i3 = 0;
+			fut_top.wait();
 
 			for (int i2 = 1; i2 < n2-1; i2++) {
 				for (int i1 = 0; i1 < n1; i1++) {
@@ -698,9 +655,35 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 				}
 			}
 		}
+		if(bottomcoord < n3) {
+			int i3 = z_ext-1;
+			fut_bot.wait();
+
+			for (int i2 = 1; i2 < n2-1; i2++) {
+				for (int i1 = 0; i1 < n1; i1++) {
+					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + u.local(i3-1,i2,i1) + bottomplane[i2][i1];
+					u2[i1] = u.local(i3-1,i2-1,i1) + u.local(i3-1,i2+1,i1) + bottomplane[i2-1][i1] + bottomplane[i2+1][i1];
+				}
+				for (int i1 = 1; i1 < n1-1; i1++) {
+					r.local(i3,i2,i1) = v.local(i3,i2,i1)
+					 - a[0] * u.local(i3,i2,i1)
+					//--------------------------------------------------------------------
+					//c  Assume a(1) = 0	  (Enable 2 lines below if a(1) not= 0)
+					//c-------------------------------------------------------------------
+					//c > - a(1) * ( u(i1-1,i2,i3) + u(i1+1,i2,i3)
+					//c > + u1(i1) )
+					//c-------------------------------------------------------------------
+					 - a[2] * ( u2[i1] + u1[i1-1] + u1[i1+1] )
+					 - a[3] * ( u2[i1-1] + u2[i1+1] );
+				}
+			}
+		}
 	} else {
-		if(0 < topcoord && bottomcoord < n3) {
+		if(0 <= topcoord && bottomcoord < n3) {
 			int i3 = 0;
+			fut_top.wait();
+			fut_bot.wait();
+
 			for (int i2 = 1; i2 < n2-1; i2++) {
 				for (int i1 = 0; i1 < n1; i1++) {
 					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + topplane[i2][i1] + bottomplane[i2][i1];
@@ -725,6 +708,7 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 	/*--------------------------------------------------------------------
 	c	 exchange boundary data
 	c--------------------------------------------------------------------*/
+	dash::barrier();
 	comm3(r,n1,n2,n3);
 
 	if (debug_vec[0] >= 1 ) {
@@ -741,113 +725,139 @@ c-------------------------------------------------------------------*/
 
 static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::NArray<double, 3> &s, int m1j, int m2j, int m3j, int k ) {
 	/*--------------------------------------------------------------------
-	c-------------------------------------------------------------------*/
+		c-------------------------------------------------------------------*/
 
-	/*--------------------------------------------------------------------
-	c	 rprj3 projects onto the next coarser grid,
-	c	 using a trilinear Finite Element projection:  s = r' = P r
-	c
-	c	 This  implementation costs  20A + 4M per result, where
-	c	 A and M denote the costs of Addition and Multiplication.
-	c	 Note that this vectorizes, and is also fine for cache
-	c	 based machines.
-	c-------------------------------------------------------------------*/
+		/*--------------------------------------------------------------------
+		c	 rprj3 projects onto the next coarser grid,
+		c	 using a trilinear Finite Element projection:  s = r' = P r
+		c
+		c	 This  implementation costs  20A + 4M per result, where
+		c	 A and M denote the costs of Addition and Multiplication.
+		c	 Note that this vectorizes, and is also fine for cache
+		c	 based machines.
+		c-------------------------------------------------------------------*/
 
-	int d1, d2, d3;
+		int d1, d2, d3;
 
-	if (m1k == 3) {
-		d1 = 2;
-	} else {
-		d1 = 1;
-	}
-
-	if (m2k == 3) {
-		d2 = 2;
-	} else {
-		d2 = 1;
-	}
-
-	if (m3k == 3) {
-		d3 = 2;
-	} else {
-		d3 = 1;
-	}
-
-	int j2, j1, i3, i2, i1;
-	double x1[M], y1[M], x2, y2;
-	// double r_local[3][r.extent(1)][r.extent(2)];
-	std::vector<std::vector<std::vector<double> > > r_local(3);
-	for(int i = 0; i < 3; i++) {
-		r_local[i] = std::vector<std::vector<double> >(r.extent(1));
-		for(int j = 0; j < r.extent(1); j++) {
-			r_local[i][j] = std::vector<double>(r.extent(2));
+		if (m1k == 3) {
+			d1 = 2;
+		} else {
+			d1 = 1;
 		}
-	}
 
-	auto pattern = s.pattern();
-	auto local_beg_gidx = pattern.coords(pattern.global(0));
-  auto local_end_gidx = pattern.coords(pattern.global(pattern.local_size()-1));
+		if (m2k == 3) {
+			d2 = 2;
+		} else {
+			d2 = 1;
+		}
 
-	int start = 0;
-	if(local_beg_gidx[0] == 0) start++;
+		if (m3k == 3) {
+			d3 = 2;
+		} else {
+			d3 = 1;
+		}
 
-	int end = s.local.extent(0);
-	if(local_end_gidx[0] == s.extent(0)-1) end--;
+		int j2, j1, i3, i2, i1;
+		double x1[M], y1[M], x2, y2;
+		// double r_local[3][r.extent(1)][r.extent(2)];
+		// std::vector<std::vector<std::vector<double> > > r_local(3);
+		// for(int i = 0; i < 3; i++) {
+		// 	r_local[i] = std::vector<std::vector<double> >(r.extent(1));
+		// 	for(int j = 0; j < r.extent(1); j++) {
+		// 		r_local[i][j] = std::vector<double>(r.extent(2));
+		// 	}
+		// }
 
-	for(int j3l = start; j3l < end; j3l++) {
-		int j3 = local_beg_gidx[0]+j3l;
-		i3 = 2*j3-d3;
-		//C	i3 = 2*j3-1
+		auto pattern = s.pattern();
+		auto local_beg_gidx = pattern.coords(pattern.global(0));
+	  auto local_end_gidx = pattern.coords(pattern.global(pattern.local_size()-1));
 
-		///////Copy////
-		for(int i = 0; i < 3; i++) {
-			 if(i == 0 && j3l-start > 0) {
-			 	r_local[0] = r_local[2];
-			 } else {
-				for(int j = 0; j < r.extent(1); j++) {
-					for(int k = 0; k < r.extent(2); k++) {
-						r_local[i][j][k] = r(i3+i,j,k);
-					}
+		int start = 0;
+		if(local_beg_gidx[0] == 0) start++;
+
+		int end = s.local.extent(0);
+		if(local_end_gidx[0] == s.extent(0)-1) end--;
+
+		int r_planes = 2*(end-start)+1;
+		double r_local[r_planes][(int) r.extent(1)][(int) r.extent(2)];
+		int r_idx = 0;
+		int r_psize = r.extent(1)*r.extent(2);
+
+		dash::Future<double*> futs[r_planes];
+
+		for(int j3l = start; j3l < end; j3l++){
+			int j3 = local_beg_gidx[0]+j3l;
+			i3 = 2*j3-d3;
+			// printf("Tying to access plane %d of %d. Writing in %d of %d.\n", i3, (int) r.extent(0), r_idx, r_planes);
+			// futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
+			dash::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
+			r_idx++;
+			// printf("Tying to access plane %d of %d. Writing in %d of %d.\n", i3+1, (int) r.extent(0), r_idx, r_planes);
+			// futs[r_idx] = dash::copy_async(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[r_idx][0][0]);
+			dash::copy(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[r_idx][0][0]);
+			r_idx++;
+		}
+
+		if(start < end) {
+			i3 = 2*(local_beg_gidx[0]+end)-d3;
+			// printf("Tying to access plane %d of %d. Writing in %d of %d. Unit %d. r_psize=%d\n", i3, (int) r.extent(0), r_idx, r_planes, (int) dash::myid(), r_psize);
+			// futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
+			// printf("Last element: %f, should be %f\n", (double) *(r.begin()+r_psize*(i3+1)-1), (double) r(5,5,5));
+			// dash::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
+			std::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
+			r_idx = 0;
+		}
+
+		for(int j3l = start; j3l < end; j3l++) {
+			int j3 = local_beg_gidx[0]+j3l;
+			i3 = 2*j3-d3;
+			//C	i3 = 2*j3-1
+
+			// if(r_idx == 0) {
+			// 	futs[r_idx+0].wait();
+			// 	futs[r_idx+1].wait();
+			// 	futs[r_idx+2].wait();
+			// } else {
+			// 	futs[r_idx+1].wait();
+			// 	futs[r_idx+2].wait();
+			// }
+
+			for (j2 = 1; j2 < m2j-1; j2++) {
+				i2 = 2*j2-d2;
+				//C  i2 = 2*j2-1
+
+				for (j1 = 1; j1 < m1j; j1++) {
+					i1 = 2*j1-d1;
+				//C	i1 = 2*j1-1
+					x1[i1] = r_local[r_idx+1][i2][i1] + r_local[r_idx+1][i2+2][i1] + r_local[r_idx+0][i2+1][i1] + r_local[r_idx+2][i2+1][i1];
+					y1[i1] = r_local[r_idx+0][i2][i1] + r_local[r_idx+2][i2][i1] + r_local[r_idx+0][i2+2][i1] + r_local[r_idx+2][i2+2][i1];
 				}
-			 }
+
+				for (j1 = 1; j1 < m1j-1; j1++) {
+					i1 = 2*j1-d1;
+				//C	i1 = 2*j1-1
+					y2 = r_local[r_idx+0][i2][i1+1] + r_local[r_idx+2][i2][i1+1] + r_local[r_idx+0][i2+2][i1+1] + r_local[r_idx+2][i2+2][i1+1];
+					x2 = r_local[r_idx+1][i2][i1+1] + r_local[r_idx+1][i2+2][i1+1] + r_local[r_idx+0][i2+1][i1+1] + r_local[r_idx+2][i2+1][i1+1];
+					s.local(j3l,j2,j1) =
+						0.5 * r_local[r_idx+1][i2+1][i1+1]
+						+ 0.25 * ( r_local[r_idx+1][i2+1][i1] + r_local[r_idx+1][i2+1][i1+2] + x2)
+						+ 0.125 * ( x1[i1] + x1[i1+2] + y2)
+						+ 0.0625 * ( y1[i1] + y1[i1+2] );
+				}
+			}
+			r_idx = r_idx + 2;
 		}
-		/////End copy
 
-		for (j2 = 1; j2 < m2j-1; j2++) {
-			i2 = 2*j2-d2;
-			//C  i2 = 2*j2-1
+		comm3(s,m1j,m2j,m3j);
 
-			for (j1 = 1; j1 < m1j; j1++) {
-				i1 = 2*j1-d1;
-			//C	i1 = 2*j1-1
-				x1[i1] = r_local[1][i2][i1] + r_local[1][i2+2][i1] + r_local[0][i2+1][i1] + r_local[2][i2+1][i1];
-				y1[i1] = r_local[0][i2][i1] + r_local[2][i2][i1] + r_local[0][i2+2][i1] + r_local[2][i2+2][i1];
-			}
+		if (debug_vec[0] >= 1 ) {
+			rep_nrm(s,m1j,m2j,m3j,(char*)"   rprj3",k-1);
+		}
 
-			for (j1 = 1; j1 < m1j-1; j1++) {
-				i1 = 2*j1-d1;
-			//C	i1 = 2*j1-1
-				y2 = r_local[0][i2][i1+1] + r_local[2][i2][i1+1] + r_local[0][i2+2][i1+1] + r_local[2][i2+2][i1+1];
-				x2 = r_local[1][i2][i1+1] + r_local[1][i2+2][i1+1] + r_local[0][i2+1][i1+1] + r_local[2][i2+1][i1+1];
-				s.local(j3l,j2,j1) =
-					0.5 * r_local[1][i2+1][i1+1]
-					+ 0.25 * ( r_local[1][i2+1][i1] + r_local[1][i2+1][i1+2] + x2)
-					+ 0.125 * ( x1[i1] + x1[i1+2] + y2)
-					+ 0.0625 * ( y1[i1] + y1[i1+2] );
-			}
+		if (debug_vec[4] >= k ) {
+			showall(s,m1j,m2j,m3j);
 		}
 	}
-	
-	comm3(s,m1j,m2j,m3j);
-
-	if (debug_vec[0] >= 1 ) {
-		rep_nrm(s,m1j,m2j,m3j,(char*)"   rprj3",k-1);
-	}
-
-	if (debug_vec[4] >= k ) {
-		showall(s,m1j,m2j,m3j);
-	}
-}
 
 /*--------------------------------------------------------------------
 c-------------------------------------------------------------------*/
@@ -1045,7 +1055,7 @@ static void norm2u3( dash::NArray<double, 3> &r, int n1, int n2, int n3, double 
 
 	dash::barrier();
 	s = dash::reduce(p_s.begin(), p_s.end(), 0.0, std::plus<double>());
-	a = dash::reduce(p_a.begin(), p_a.end(), 0.0, std::plus<double>());
+	a = (double) (*dash::max_element(p_a.begin(), p_a.end()));
 	if (a > *rnmu) *rnmu = a;
 
 	*rnm2 = sqrt(s/(double)n);
@@ -1109,19 +1119,11 @@ static void comm3( dash::NArray<double, 3> &u, int n1, int n2, int n3) {
 	dash::barrier();
 	// axis = 3
 	if(u(u.extent(0)-1,0,0).is_local()) {
-		for(int i2 = 0; i2 < n2; i2++) {
-			for (int i1 = 0; i1 < n1; i1++) {
-				u.local(end,i2,i1) = u(1,i2,i1);
-			}
-		}
+		dash::copy(u.begin()+n2*n1*1, u.begin()+n2*n1*2, u.lbegin()+n2*n1*end);
 	}
 
 	if(u(0,0,0).is_local()) {
-		for(int i2 = 0; i2 < n2; i2++) {
-			for (int i1 = 0; i1 < n1; i1++) {
-				u.local(0,i2,i1) = u(n3-2,i2,i1);
-			}
-		}
+		dash::copy(u.begin()+n2*n1*(n3-2), u.begin()+n2*n1*(n3-1), u.lbegin());
 	}
 
 	dash::barrier();
@@ -1161,143 +1163,143 @@ static void zran3( dash::NArray<double, 3> &z, int n1, int n2, int n3, int nx, i
 
 	zero3(z,n1,n2,n3);
 	dash::barrier();
-
 	if(dash::myid() == 0) {
-		i = is1-1+nx*(is2-1+ny*(is3-1));
 
-		ai = power( A, i );
-		d1 = ie1 - is1 + 1;
-		/*e1 = ie1 - is1 + 2;*/
-		e2 = ie2 - is2 + 2;
-		e3 = ie3 - is3 + 2;
-		x0 = X;
-		/*rdummy = */randlc( &x0, ai );
+	i = is1-1+nx*(is2-1+ny*(is3-1));
 
-		for (i3 = 1; i3 < e3; i3++) {
-			x1 = x0;
-			for (i2 = 1; i2 < e2; i2++) {
-				xx = x1;
-				double tmp[d1];
-				vranlc( d1, &xx, A, tmp);
-				for(int i = 0; i < d1; i++) z[i3][i2][i] = tmp[i];
-				// vranlc( d1, &xx, A, (double *) &(z[i3][i2][0]));
-				/*rdummy = */randlc( &x1, a1 );
-			}
-			/*rdummy = */randlc( &x0, a2 );
+	ai = power( A, i );
+	d1 = ie1 - is1 + 1;
+	/*e1 = ie1 - is1 + 2;*/
+	e2 = ie2 - is2 + 2;
+	e3 = ie3 - is3 + 2;
+	x0 = X;
+	/*rdummy = */randlc( &x0, ai );
+
+	for (i3 = 1; i3 < e3; i3++) {
+		x1 = x0;
+		for (i2 = 1; i2 < e2; i2++) {
+			xx = x1;
+			double tmp[d1+1];
+			vranlc( d1, &xx, A, tmp);
+			for(int i = 1; i <= d1; i++) z[i3][i2][i] = tmp[i];
+			// vranlc( d1, &xx, A, (double *) &(z[i3][i2][0]));
+			/*rdummy = */randlc( &x1, a1 );
 		}
+		/*rdummy = */randlc( &x0, a2 );
+	}
 
-		/*--------------------------------------------------------------------
-		c	 call comm3(z,n1,n2,n3)
-		c	 call showall(z,n1,n2,n3)
-		c-------------------------------------------------------------------*/
+	/*--------------------------------------------------------------------
+	c	 call comm3(z,n1,n2,n3)
+	c	 call showall(z,n1,n2,n3)
+	c-------------------------------------------------------------------*/
 
-		/*--------------------------------------------------------------------
-		c	 each processor looks for twenty candidates
-		c-------------------------------------------------------------------*/
+	/*--------------------------------------------------------------------
+	c	 each processor looks for twenty candidates
+	c-------------------------------------------------------------------*/
 
-		for (i = 0; i < MM; i++) {
-			ten[i][1] = 0.0;
-			j1[i][1] = 0;
-			j2[i][1] = 0;
-			j3[i][1] = 0;
-			ten[i][0] = 1.0;
-			j1[i][0] = 0;
-			j2[i][0] = 0;
-			j3[i][0] = 0;
-		}
-		for (i3 = 1; i3 < n3-1; i3++) {
-			for (i2 = 1; i2 < n2-1; i2++) {
-				for (i1 = 1; i1 < n1-1; i1++) {
-					if ( z[i3][i2][i1] > ten[0][1] ) {
-						ten[0][1] = z[i3][i2][i1];
-						j1[0][1] = i1;
-						j2[0][1] = i2;
-						j3[0][1] = i3;
-						bubble( ten, j1, j2, j3, MM, 1 );
-					}
-					if ( z[i3][i2][i1] < ten[0][0] ) {
-						ten[0][0] = z[i3][i2][i1];
-						j1[0][0] = i1;
-						j2[0][0] = i2;
-						j3[0][0] = i3;
-						bubble( ten, j1, j2, j3, MM, 0 );
-					}
+	for (i = 0; i < MM; i++) {
+		ten[i][1] = 0.0;
+		j1[i][1] = 0;
+		j2[i][1] = 0;
+		j3[i][1] = 0;
+		ten[i][0] = 1.0;
+		j1[i][0] = 0;
+		j2[i][0] = 0;
+		j3[i][0] = 0;
+	}
+	for (i3 = 1; i3 < n3-1; i3++) {
+		for (i2 = 1; i2 < n2-1; i2++) {
+			for (i1 = 1; i1 < n1-1; i1++) {
+				if ( z[i3][i2][i1] > ten[0][1] ) {
+					ten[0][1] = z[i3][i2][i1];
+					j1[0][1] = i1;
+					j2[0][1] = i2;
+					j3[0][1] = i3;
+					bubble( ten, j1, j2, j3, MM, 1 );
+				}
+				if ( z[i3][i2][i1] < ten[0][0] ) {
+					ten[0][0] = z[i3][i2][i1];
+					j1[0][0] = i1;
+					j2[0][0] = i2;
+					j3[0][0] = i3;
+					bubble( ten, j1, j2, j3, MM, 0 );
 				}
 			}
 		}
-
-		/*--------------------------------------------------------------------
-		c	 Now which of these are globally best?
-		c-------------------------------------------------------------------*/
-		i1 = MM - 1;
-		i0 = MM - 1;
-		int jg[4][MM][2];
-		for (i = MM - 1 ; i >= 0; i--) {
-			best = z[j3[i1][1]][j2[i1][1]][j1[i1][1]];
-			if (best == z[j3[i1][1]][j2[i1][1]][j1[i1][1]]) {
-				jg[0][i][1] = 0;
-				jg[1][i][1] = is1 - 1 + j1[i1][1];
-				jg[2][i][1] = is2 - 1 + j2[i1][1];
-				jg[3][i][1] = is3 - 1 + j3[i1][1];
-				i1 = i1-1;
-			} else {
-				jg[0][i][1] = 0;
-				jg[1][i][1] = 0;
-				jg[2][i][1] = 0;
-				jg[3][i][1] = 0;
-			}
-			ten[i][1] = best;
-			best = z[j3[i0][0]][j2[i0][0]][j1[i0][0]];
-			if (best == z[j3[i0][0]][j2[i0][0]][j1[i0][0]]) {
-				jg[0][i][0] = 0;
-				jg[1][i][0] = is1 - 1 + j1[i0][0];
-				jg[2][i][0] = is2 - 1 + j2[i0][0];
-				jg[3][i][0] = is3 - 1 + j3[i0][0];
-				i0 = i0-1;
-			} else {
-				jg[0][i][0] = 0;
-				jg[1][i][0] = 0;
-				jg[2][i][0] = 0;
-				jg[3][i][0] = 0;
-			}
-			ten[i][0] = best;
-		}
-		m1 = i1+1;
-		m0 = i0+1;
-
-		/* printf(" negative charges at");
-		for (i = 0; i < MM; i++) {
-			if (i%5 == 0) printf("\n");
-			printf(" (%3d,%3d,%3d)", jg[1][i][0], jg[2][i][0], jg[3][i][0]);
-		}
-		printf("\n positive charges at");
-		for (i = 0; i < MM; i++) {
-			if (i%5 == 0) printf("\n");
-			printf(" (%3d,%3d,%3d)", jg[1][i][1], jg[2][i][1], jg[3][i][1]);
-		}
-		printf("\n small random numbers were\n");
-		for (i = MM-1; i >= 0; i--) {
-			printf(" %15.8e", ten[i][0]);
-		}
-		printf("\n and they were found on processor number\n");
-		for (i = MM-1; i >= 0; i--) {
-			printf(" %4d", jg[0][i][0]);
-		}
-		printf("\n large random numbers were\n");
-		for (i = MM-1; i >= 0; i--) {
-			printf(" %15.8e", ten[i][1]);
-		}
-		printf("\n and they were found on processor number\n");
-		for (i = MM-1; i >= 0; i--) {
-			printf(" %4d", jg[0][i][1]);
-		}
-		printf("\n");*/
 	}
+
+	/*--------------------------------------------------------------------
+	c	 Now which of these are globally best?
+	c-------------------------------------------------------------------*/
+	i1 = MM - 1;
+	i0 = MM - 1;
+	int jg[4][MM][2];
+	for (i = MM - 1 ; i >= 0; i--) {
+		best = z[j3[i1][1]][j2[i1][1]][j1[i1][1]];
+		if (best == z[j3[i1][1]][j2[i1][1]][j1[i1][1]]) {
+			jg[0][i][1] = 0;
+			jg[1][i][1] = is1 - 1 + j1[i1][1];
+			jg[2][i][1] = is2 - 1 + j2[i1][1];
+			jg[3][i][1] = is3 - 1 + j3[i1][1];
+			i1 = i1-1;
+		} else {
+			jg[0][i][1] = 0;
+			jg[1][i][1] = 0;
+			jg[2][i][1] = 0;
+			jg[3][i][1] = 0;
+		}
+		ten[i][1] = best;
+		best = z[j3[i0][0]][j2[i0][0]][j1[i0][0]];
+		if (best == z[j3[i0][0]][j2[i0][0]][j1[i0][0]]) {
+			jg[0][i][0] = 0;
+			jg[1][i][0] = is1 - 1 + j1[i0][0];
+			jg[2][i][0] = is2 - 1 + j2[i0][0];
+			jg[3][i][0] = is3 - 1 + j3[i0][0];
+			i0 = i0-1;
+		} else {
+			jg[0][i][0] = 0;
+			jg[1][i][0] = 0;
+			jg[2][i][0] = 0;
+			jg[3][i][0] = 0;
+		}
+		ten[i][0] = best;
+	}
+	m1 = i1+1;
+	m0 = i0+1;
+
+	/* printf(" negative charges at");
+	for (i = 0; i < MM; i++) {
+		if (i%5 == 0) printf("\n");
+		printf(" (%3d,%3d,%3d)", jg[1][i][0], jg[2][i][0], jg[3][i][0]);
+	}
+	printf("\n positive charges at");
+	for (i = 0; i < MM; i++) {
+		if (i%5 == 0) printf("\n");
+		printf(" (%3d,%3d,%3d)", jg[1][i][1], jg[2][i][1], jg[3][i][1]);
+	}
+	printf("\n small random numbers were\n");
+	for (i = MM-1; i >= 0; i--) {
+		printf(" %15.8e", ten[i][0]);
+	}
+	printf("\n and they were found on processor number\n");
+	for (i = MM-1; i >= 0; i--) {
+		printf(" %4d", jg[0][i][0]);
+	}
+	printf("\n large random numbers were\n");
+	for (i = MM-1; i >= 0; i--) {
+		printf(" %15.8e", ten[i][1]);
+	}
+	printf("\n and they were found on processor number\n");
+	for (i = MM-1; i >= 0; i--) {
+		printf(" %4d", jg[0][i][1]);
+	}
+	printf("\n");*/
+}
 	dash::barrier();
 	zero3(z, n1, n2, n3);
 	dash::barrier();
-
 	if(dash::myid() == 0) {
+
 		for (i = MM-1; i >= m0; i--) {
 			z[j3[i][0]][j2[i][0]][j1[i][0]] = -1.0;
 		}
@@ -1306,12 +1308,12 @@ static void zran3( dash::NArray<double, 3> &z, int n1, int n2, int n3, int nx, i
 		}
 	}
 	dash::barrier();
-
 	comm3(z,n1,n2,n3);
 
 	/*--------------------------------------------------------------------
 	c	 call showall(z,n1,n2,n3)
 	c-------------------------------------------------------------------*/
+
 }
 
 /*--------------------------------------------------------------------
@@ -1441,14 +1443,14 @@ static void zero3( dash::NArray<double, 3> &z, int n1, int n2, int n3) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
-	for(int i3 = 0; i3 < z.local.extent(0); i3++){
-		for (int i2 = 0; i2 < n2; i2++) {
-			for (int i1 = 0; i1 < n1; i1++) {
-				z.local(i3,i2,i1) = 0.0;
-			}
-		}
-	}
-
+	// for(int i3 = 0; i3 < z.local.extent(0); i3++){
+	// 	for (int i2 = 0; i2 < n2; i2++) {
+	// 		for (int i1 = 0; i1 < n1; i1++) {
+	// 			z.local(i3,i2,i1) = 0.0;
+	// 		}
+	// 	}
+	// }
+	dash::fill(z.begin(), z.end(), 0.0);
 }
 
 /*---- end of program ------------------------------------------------*/
