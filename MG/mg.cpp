@@ -768,15 +768,20 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 		// 	}
 		// }
 
-		auto pattern = s.pattern();
-		auto local_beg_gidx = pattern.coords(pattern.global(0));
-	  auto local_end_gidx = pattern.coords(pattern.global(pattern.local_size()-1));
+		auto s_pattern = s.pattern();
+		auto s_local_beg_gidx = s_pattern.coords(s_pattern.global(0));
+	  auto s_local_end_gidx = s_pattern.coords(s_pattern.global(s_pattern.local_size()-1));
+
+		auto r_pattern = r.pattern();
+		auto r_local_beg_gidx = r_pattern.coords(r_pattern.global(0));
+	  auto r_local_end_gidx = r_pattern.coords(r_pattern.global(r_pattern.local_size()-1));
+		int r_offset = r_local_beg_gidx[0];
 
 		int start = 0;
-		if(local_beg_gidx[0] == 0) start++;
+		if(s_local_beg_gidx[0] == 0) start++;
 
 		int end = s.local.extent(0);
-		if(local_end_gidx[0] == s.extent(0)-1) end--;
+		if(s_local_end_gidx[0] == s.extent(0)-1) end--;
 
 		int r_planes = 2*(end-start)+1;
 		double r_local[r_planes][(int) r.extent(1)][(int) r.extent(2)];
@@ -786,41 +791,44 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 		dash::Future<double*> futs[r_planes];
 
 		for(int j3l = start; j3l < end; j3l++){
-			int j3 = local_beg_gidx[0]+j3l;
+			int j3 = s_local_beg_gidx[0]+j3l;
 			i3 = 2*j3-d3;
-			// printf("Tying to access plane %d of %d. Writing in %d of %d.\n", i3, (int) r.extent(0), r_idx, r_planes);
-			// futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
-			dash::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
+			futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
+			// if(r(i3,0,0).is_local()) {
+			// 	std::copy(r.lbegin()+r_psize*(i3-r_offset), r.lbegin()+r_psize*(i3-r_offset+1), &r_local[r_idx][0][0]);
+			// } else {
+				// dash::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
+			// }
 			r_idx++;
-			// printf("Tying to access plane %d of %d. Writing in %d of %d.\n", i3+1, (int) r.extent(0), r_idx, r_planes);
-			// futs[r_idx] = dash::copy_async(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[r_idx][0][0]);
-			dash::copy(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[r_idx][0][0]);
+			futs[r_idx] = dash::copy_async(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[r_idx][0][0]);
+			// dash::copy(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[r_idx][0][0]);
 			r_idx++;
 		}
 
 		if(start < end) {
-			i3 = 2*(local_beg_gidx[0]+end)-d3;
+			i3 = 2*(s_local_beg_gidx[0]+end)-d3;
 			// printf("Tying to access plane %d of %d. Writing in %d of %d. Unit %d. r_psize=%d\n", i3, (int) r.extent(0), r_idx, r_planes, (int) dash::myid(), r_psize);
 			// futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
 			// printf("Last element: %f, should be %f\n", (double) *(r.begin()+r_psize*(i3+1)-1), (double) r(5,5,5));
 			// dash::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
 			std::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
+			futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*i3+1, &r_local[r_idx][0][0]);
 			r_idx = 0;
 		}
 
 		for(int j3l = start; j3l < end; j3l++) {
-			int j3 = local_beg_gidx[0]+j3l;
+			int j3 = s_local_beg_gidx[0]+j3l;
 			i3 = 2*j3-d3;
 			//C	i3 = 2*j3-1
 
-			// if(r_idx == 0) {
-			// 	futs[r_idx+0].wait();
-			// 	futs[r_idx+1].wait();
-			// 	futs[r_idx+2].wait();
-			// } else {
-			// 	futs[r_idx+1].wait();
-			// 	futs[r_idx+2].wait();
-			// }
+			if(r_idx == 0) {
+				futs[r_idx+0].wait();
+				futs[r_idx+1].wait();
+				futs[r_idx+2].wait();
+			} else {
+				futs[r_idx+1].wait();
+				futs[r_idx+2].wait();
+			}
 
 			for (j2 = 1; j2 < m2j-1; j2++) {
 				i2 = 2*j2-d2;
