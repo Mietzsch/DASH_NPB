@@ -418,7 +418,6 @@ static void mg3P(std::vector<dash::NArray<double, 3> > &u, dash::NArray<double, 
 c-------------------------------------------------------------------*/
 
 static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n1, int n2, int n3, double c[4], int k) {
-	dash::barrier();
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -433,7 +432,7 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 	c	 Note that this vectorizes, and is also fine for cache
 	c	 based machines.
 	c-------------------------------------------------------------------*/
-	double r1[M], r2[M];
+	double r1[n1], r2[n1];
 
 	int myid = dash::myid();
 
@@ -552,7 +551,6 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 		/*--------------------------------------------------------------------
 		c	 exchange boundary points
 		c-------------------------------------------------------------------*/
-		dash::barrier();
 		comm3(u,n1,n2,n3);
 
 		if (debug_vec[0] >= 1 ) {
@@ -568,7 +566,6 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 c-------------------------------------------------------------------*/
 
 static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash::NArray<double, 3> &r, int n1, int n2, int n3, double a[4], int k ) {
-	dash::barrier();
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -584,7 +581,7 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 	c	 Note that this vectorizes, and is also fine for cache
 	c	 based machines.
 	c-------------------------------------------------------------------*/
-	double u1[M], u2[M];
+	double u1[n1], u2[n1];
 
 	int myid = dash::myid();
 
@@ -708,7 +705,6 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 	/*--------------------------------------------------------------------
 	c	 exchange boundary data
 	c--------------------------------------------------------------------*/
-	dash::barrier();
 	comm3(r,n1,n2,n3);
 
 	if (debug_vec[0] >= 1 ) {
@@ -758,15 +754,7 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 		}
 
 		int j2, j1, i3, i2, i1;
-		double x1[M], y1[M], x2, y2;
-		// double r_local[3][r.extent(1)][r.extent(2)];
-		// std::vector<std::vector<std::vector<double> > > r_local(3);
-		// for(int i = 0; i < 3; i++) {
-		// 	r_local[i] = std::vector<std::vector<double> >(r.extent(1));
-		// 	for(int j = 0; j < r.extent(1); j++) {
-		// 		r_local[i][j] = std::vector<double>(r.extent(2));
-		// 	}
-		// }
+		double x1[m1k], y1[m1k], x2, y2;
 
 		auto s_pattern = s.pattern();
 		auto s_local_beg_gidx = s_pattern.coords(s_pattern.global(0));
@@ -871,7 +859,6 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 c-------------------------------------------------------------------*/
 
 static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash::NArray<double, 3> &u, int n1, int n2, int n3, int k ) {
-	if(0 == dash::myid()) {
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -897,35 +884,59 @@ static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash:
 
 	if ( n1 != 3 && n2 != 3 && n3 != 3 ) {
 
-		double z1[M], z2[M], z3[M];
+		double z1[mm1], z2[mm1], z3[mm1];
 
-		for(int i3 = 0; i3 < mm3-1; i3++) {
-			for (int i2 = 0; i2 < mm2-1; i2++) {
-				for (int i1 = 0; i1 < mm1; i1++) {
-					z1[i1] = z[i3][i2+1][i1] + z[i3][i2][i1];
-					z2[i1] = z[i3+1][i2][i1] + z[i3][i2][i1];
-					z3[i1] = z[i3+1][i2+1][i1] + z[i3+1][i2][i1] + z1[i1];
-				}
-				for (int i1 = 0; i1 < mm1-1; i1++) {
-					u[2*i3][2*i2][2*i1] = u[2*i3][2*i2][2*i1] + z[i3][i2][i1];
-					u[2*i3][2*i2][2*i1+1] = u[2*i3][2*i2][2*i1+1] + 0.5*(z[i3][i2][i1+1]+z[i3][i2][i1]);
-				}
-				for (int i1 = 0; i1 < mm1-1; i1++) {
-					u[2*i3][2*i2+1][2*i1] = u[2*i3][2*i2+1][2*i1] + 0.5 * z1[i1];
-					u[2*i3][2*i2+1][2*i1+1] = u[2*i3][2*i2+1][2*i1+1] + 0.25*( z1[i1] + z1[i1+1] );
-				}
-				for (int i1 = 0; i1 < mm1-1; i1++) {
-					u[2*i3+1][2*i2][2*i1] = u[2*i3+1][2*i2][2*i1] + 0.5 * z2[i1];
-					u[2*i3+1][2*i2][2*i1+1] = u[2*i3+1][2*i2][2*i1+1] + 0.25*( z2[i1] + z2[i1+1] );
-				}
-				for (int i1 = 0; i1 < mm1-1; i1++) {
-					u[2*i3+1][2*i2+1][2*i1] = u[2*i3+1][2*i2+1][2*i1] + 0.25* z3[i1];
-					u[2*i3+1][2*i2+1][2*i1+1] = u[2*i3+1][2*i2+1][2*i1+1] + 0.125*( z3[i1] + z3[i1+1] );
+		auto pattern = u.pattern();
+		auto local_beg_gidx = pattern.coords(pattern.global(0));
+	  auto local_end_gidx = pattern.coords(pattern.global(pattern.local_size()-1));
+		int z_offset = local_beg_gidx[0];
+
+		int start = 0 - z_offset%2;
+		int z_planes = u.local.extent(0);
+		int z_size = mm2*mm1;
+
+		if((int) z_planes > 0) {
+			int z_local_size = z_planes-start+((z_planes+start)%2);
+			double z_local[z_local_size][mm2][mm1];
+
+			for(int j3 = start; j3 < z_planes; j3+=2) {
+				int i3 = (z_offset + j3)/2;
+				std::copy(z.begin() + z_size*i3, z.begin() + z_size*(i3+1), &z_local[j3-start][0][0]);
+				std::copy(z.begin() + z_size*(i3+1), z.begin() + z_size*(i3+2), &z_local[j3-start+1][0][0]);
+				//dash::copy gets
+				//[    3 ERROR ] [ 11302 ] GlobPtrBase.h            :264  | GlobPtr.increment                            | offset goes beyond the global memory end 1
+			}
+
+			for(int j3 = start; j3 < z_planes; j3+=2) {
+				// int i3 = (z_offset + j3)/2;
+				for (int i2 = 0; i2 < mm2-1; i2++) {
+					for (int i1 = 0; i1 < mm1; i1++) {
+						z1[i1] = z_local[j3-start][i2+1][i1] + z_local[j3-start][i2][i1];
+						z2[i1] = z_local[j3-start+1][i2][i1] + z_local[j3-start][i2][i1];
+						z3[i1] = z_local[j3-start+1][i2+1][i1] + z_local[j3-start+1][i2][i1] + z1[i1];
+					}
+					if(j3 >= 0) {
+						for (int i1 = 0; i1 < mm1-1; i1++) {
+							u.local(j3,2*i2,2*i1)     = u.local(j3,2*i2,2*i1) + z_local[j3-start][i2][i1];
+							u.local(j3,2*i2,2*i1+1)   = u.local(j3,2*i2,2*i1+1) + 0.5*(z_local[j3-start][i2][i1+1]+z_local[j3-start][i2][i1]);
+							u.local(j3,2*i2+1,2*i1)   = u.local(j3,2*i2+1,2*i1) + 0.5 * z1[i1];
+							u.local(j3,2*i2+1,2*i1+1) = u.local(j3,2*i2+1,2*i1+1) + 0.25*( z1[i1] + z1[i1+1] );
+						}
+					}
+					if(j3+1 < z_planes) {
+						for (int i1 = 0; i1 < mm1-1; i1++) {
+							u.local(j3+1,2*i2,2*i1)     = u.local(j3+1,2*i2,2*i1) + 0.5 * z2[i1];
+							u.local(j3+1,2*i2,2*i1+1)   = u.local(j3+1,2*i2,2*i1+1) + 0.25*( z2[i1] + z2[i1+1] );
+							u.local(j3+1,2*i2+1,2*i1)   = u.local(j3+1,2*i2+1,2*i1) + 0.25* z3[i1];
+							u.local(j3+1,2*i2+1,2*i1+1) = u.local(j3+1,2*i2+1,2*i1+1) + 0.125*( z3[i1] + z3[i1+1] );
+						}
+					}
 				}
 			}
 		}
 
 	} else {
+
 		if (n1 == 3) {
 			d1 = 2;
 			t1 = 1;
@@ -947,6 +958,7 @@ static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash:
 			d3 = 1;
 			t3 = 0;
 		}
+		if( 0 == dash::myid()) {
 
 		for(int i3 = d3; i3 <= mm3-1; i3++) {
 			for (int i2 = d2; i2 <= mm2-1; i2++) {
@@ -1004,7 +1016,7 @@ static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash:
 				}
 			}
 		}
-	}
+
 
 	{
 		if (debug_vec[0] >= 1 ) {
@@ -1016,6 +1028,8 @@ static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash:
 			showall(u,n1,n2,n3);
 		}
 	}}
+}
+dash::barrier();
 }
 
 /*--------------------------------------------------------------------
