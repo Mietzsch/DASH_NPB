@@ -778,34 +778,30 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 
 		int r_planes = 2*(end-start)+1;
 		// printf("init %d * %d * %d\n", r_planes,(int) r.extent(1),(int) r.extent(2));
-		// double r_local[r_planes][r_y][r_x];
+		double r_local[r_planes][r_y][r_x];
 		// double ***r_local = (double ***)malloc(r_planes * sizeof(double **));
 		// for (int i=0; i<r_planes; i++) {
 		// 	 r_local[i] = (double **)malloc(r_y * sizeof(double *));
 		// 	 for(int j=0; j<r_y; j++) r_local[i][j] = (double *)malloc(r_x * sizeof(double));
 		// }
-		std::vector<std::vector<double> > r_local(r_planes);
-    for(int i = 0; i < r_planes; i++) {
-      r_local[i] = std::vector<double> (r_y*r_x);
-    }
 		// printf("Done. Unit %d. Start %d, end %d.\n", (int) dash::myid(), start, end);
 		int r_idx = 0;
 		int r_psize = r_y*r_x;
 
 		dash::Future<double*> futs[r_planes];
-
+		
 		for(int j3l = start; j3l < end; j3l++){
 			int j3 = s_local_beg_gidx[0]+j3l;
 			i3 = 2*j3-d3;
-			futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0]);
+			futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
 			// if(r(i3,0,0).is_local()) {
-			// std::copy(r.lbegin()+r_psize*(i3-r_offset), r.lbegin()+r_psize*(i3-r_offset+1), &r_local[r_idx][0][0]);
+				// std::copy(r.lbegin()+r_psize*(i3-r_offset), r.lbegin()+r_psize*(i3-r_offset+1), &r_local[r_idx][0][0]);
 			// } else {
-			// std::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0]);
+			// std::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[0][0][0]);
 			// }
 			r_idx++;
-			futs[r_idx] = dash::copy_async(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[r_idx][0]);
-			// std::copy(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[r_idx][0]);
+			futs[r_idx] = dash::copy_async(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[r_idx][0][0]);
+			// std::copy(r.begin()+r_psize*(i3+1), r.begin()+r_psize*(i3+2), &r_local[0][0][0]);
 			r_idx++;
 		}
 
@@ -816,8 +812,8 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 			// futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
 			// printf("Last element: %f, should be %f\n", (double) *(r.begin()+r_psize*(i3+1)-1), (double) r(5,5,5));
 			// dash::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
-			std::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0]);
-			futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*i3+1, &r_local[r_idx][0]);
+			std::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
+			futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*i3+1, &r_local[r_idx][0][0]);
 			r_idx = 0;
 		}
 		// printf("Copied.\n");
@@ -843,24 +839,18 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 				for (j1 = 1; j1 < m1j; j1++) {
 					i1 = 2*j1-d1;
 				//C	i1 = 2*j1-1
-					// x1[i1] = r_local[r_idx+1][i2][i1] + r_local[r_idx+1][i2+2][i1] + r_local[r_idx+0][i2+1][i1] + r_local[r_idx+2][i2+1][i1];
-					x1[i1] = r_local[r_idx+1][i2*r_x+i1] + r_local[r_idx+1][(i2+2)*r_x+i1] + r_local[r_idx+0][(i2+1)*r_x+i1] + r_local[r_idx+2][(i2+1)*r_x+i1];
-					// y1[i1] = r_local[r_idx+0][i2][i1] + r_local[r_idx+2][i2][i1] + r_local[r_idx+0][i2+2][i1] + r_local[r_idx+2][i2+2][i1];
-					y1[i1] = r_local[r_idx+0][i2*r_x+i1] + r_local[r_idx+2][i2*r_x+i1] + r_local[r_idx+0][(i2+2)*r_x+i1] + r_local[r_idx+2][(i2+2)*r_x+i1];
+					x1[i1] = r_local[r_idx+1][i2][i1] + r_local[r_idx+1][i2+2][i1] + r_local[r_idx+0][i2+1][i1] + r_local[r_idx+2][i2+1][i1];
+					y1[i1] = r_local[r_idx+0][i2][i1] + r_local[r_idx+2][i2][i1] + r_local[r_idx+0][i2+2][i1] + r_local[r_idx+2][i2+2][i1];
 				}
 
 				for (j1 = 1; j1 < m1j-1; j1++) {
 					i1 = 2*j1-d1;
 				//C	i1 = 2*j1-1
-					// y2 = r_local[r_idx+0][i2][i1+1] + r_local[r_idx+2][i2][i1+1] + r_local[r_idx+0][i2+2][i1+1] + r_local[r_idx+2][i2+2][i1+1];
-					y2 = r_local[r_idx+0][i2*r_x+i1+1] + r_local[r_idx+2][i2*r_x+i1+1] + r_local[r_idx+0][(i2+2)*r_x+i1+1] + r_local[r_idx+2][(i2+2)*r_x+i1+1];
-					// x2 = r_local[r_idx+1][i2][i1+1] + r_local[r_idx+1][i2+2][i1+1] + r_local[r_idx+0][i2+1][i1+1] + r_local[r_idx+2][i2+1][i1+1];
-					x2 = r_local[r_idx+1][i2*r_x+i1+1] + r_local[r_idx+1][(i2+2)*r_x+i1+1] + r_local[r_idx+0][(i2+1)*r_x+i1+1] + r_local[r_idx+2][(i2+1)*r_x+i1+1];
+					y2 = r_local[r_idx+0][i2][i1+1] + r_local[r_idx+2][i2][i1+1] + r_local[r_idx+0][i2+2][i1+1] + r_local[r_idx+2][i2+2][i1+1];
+					x2 = r_local[r_idx+1][i2][i1+1] + r_local[r_idx+1][i2+2][i1+1] + r_local[r_idx+0][i2+1][i1+1] + r_local[r_idx+2][i2+1][i1+1];
 					s.local(j3l,j2,j1) =
-						// 0.5 * r_local[r_idx+1][i2+1][i1+1]
-						0.5 * r_local[r_idx+1][(i2+1)*r_x+i1+1]
-						// + 0.25 * ( r_local[r_idx+1][i2+1][i1] + r_local[r_idx+1][i2+1][i1+2] + x2)
-						+ 0.25 * ( r_local[r_idx+1][(i2+1)*r_x+i1] + r_local[r_idx+1][(i2+1)*r_x+i1+2] + x2)
+						0.5 * r_local[r_idx+1][i2+1][i1+1]
+						+ 0.25 * ( r_local[r_idx+1][i2+1][i1] + r_local[r_idx+1][i2+1][i1+2] + x2)
 						+ 0.125 * ( x1[i1] + x1[i1+2] + y2)
 						+ 0.0625 * ( y1[i1] + y1[i1+2] );
 				}
@@ -923,22 +913,18 @@ static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash:
 
 		if((int) z_planes > 0) {
 			int z_local_size = z_planes-start+((z_planes+start)%2);
-			// double z_local[z_local_size][mm2][mm1];
-			std::vector<std::vector<double> > z_local(z_local_size);
-	    for(int i = 0; i < z_local_size; i++) {
-	      z_local[i] = std::vector<double> (mm2*mm1);
-	    }
-
+			double z_local[z_local_size][mm2][mm1];
 			dash::Future<double*> futs[z_local_size];
 
 			for(int j3 = start; j3 < z_planes; j3+=2) {
 				int i3 = (z_offset + j3)/2;
-				futs[j3-start] = dash::copy_async(z.begin() + z_size*i3, z.begin() + z_size*(i3+1), &z_local[j3-start][0]);
+				futs[j3-start] = dash::copy_async(z.begin() + z_size*i3, z.begin() + z_size*(i3+1), &z_local[j3-start][0][0]);
 				if(i3+2 == (int) z.extent(0)) {
-					std::copy(z.begin() + z_size*(i3+1), z.begin() + z_size*(i3+2), &z_local[j3-start+1][0]);
-					futs[j3-start+1] = dash::copy_async(z.begin() + z_size*(i3+1), z.begin() + z_size*(i3+1)+1, &z_local[j3-start+1][0]);
+					 // printf("Trying %d-%d of %d\n", (i3+1), (i3+2), (int) z.extent(0));
+					std::copy(z.begin() + z_size*(i3+1), z.end(), &z_local[j3-start+1][0][0]);
+					futs[j3-start+1] = dash::copy_async(z.begin() + z_size*(i3+1), z.begin() + z_size*(i3+1)+1, &z_local[j3-start+1][0][0]);
 				} else {
-					futs[j3-start+1] = dash::copy_async(z.begin() + z_size*(i3+1), z.begin() + z_size*(i3+2), &z_local[j3-start+1][0]);
+					futs[j3-start+1] = dash::copy_async(z.begin() + z_size*(i3+1), z.begin() + z_size*(i3+2), &z_local[j3-start+1][0][0]);
 				}
 				//dash::copy gets
 				//[    3 ERROR ] [ 11302 ] GlobPtrBase.h            :264  | GlobPtr.increment                            | offset goes beyond the global memory end 1
@@ -951,19 +937,14 @@ static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash:
 
 				for (int i2 = 0; i2 < mm2-1; i2++) {
 					for (int i1 = 0; i1 < mm1; i1++) {
-						// z1[i1] = z_local[j3-start][i2+1][i1] + z_local[j3-start][i2][i1];
-						z1[i1] = z_local[j3-start][(i2+1)*mm2+i1] + z_local[j3-start][i2*mm2+i1];
-						// z2[i1] = z_local[j3-start+1][i2][i1] + z_local[j3-start][i2][i1];
-						z2[i1] = z_local[j3-start+1][i2*mm2+i1] + z_local[j3-start][i2*mm2+i1];
-						// z3[i1] = z_local[j3-start+1][i2+1][i1] + z_local[j3-start+1][i2][i1] + z1[i1];
-						z3[i1] = z_local[j3-start+1][(i2+1)*mm2+i1] + z_local[j3-start+1][i2*mm2+i1] + z1[i1];
+						z1[i1] = z_local[j3-start][i2+1][i1] + z_local[j3-start][i2][i1];
+						z2[i1] = z_local[j3-start+1][i2][i1] + z_local[j3-start][i2][i1];
+						z3[i1] = z_local[j3-start+1][i2+1][i1] + z_local[j3-start+1][i2][i1] + z1[i1];
 					}
 					if(j3 >= 0) {
 						for (int i1 = 0; i1 < mm1-1; i1++) {
-							// u.local(j3,2*i2,2*i1)     = u.local(j3,2*i2,2*i1) + z_local[j3-start][i2][i1];
-							u.local(j3,2*i2,2*i1)     = u.local(j3,2*i2,2*i1) + z_local[j3-start][i2*mm2+i1];
-							// u.local(j3,2*i2,2*i1+1)   = u.local(j3,2*i2,2*i1+1) + 0.5*(z_local[j3-start][i2][i1+1]+z_local[j3-start][i2][i1]);
-							u.local(j3,2*i2,2*i1+1)   = u.local(j3,2*i2,2*i1+1) + 0.5*(z_local[j3-start][i2*mm2+i1+1]+z_local[j3-start][i2*mm2+i1]);
+							u.local(j3,2*i2,2*i1)     = u.local(j3,2*i2,2*i1) + z_local[j3-start][i2][i1];
+							u.local(j3,2*i2,2*i1+1)   = u.local(j3,2*i2,2*i1+1) + 0.5*(z_local[j3-start][i2][i1+1]+z_local[j3-start][i2][i1]);
 							u.local(j3,2*i2+1,2*i1)   = u.local(j3,2*i2+1,2*i1) + 0.5 * z1[i1];
 							u.local(j3,2*i2+1,2*i1+1) = u.local(j3,2*i2+1,2*i1+1) + 0.25*( z1[i1] + z1[i1+1] );
 						}
