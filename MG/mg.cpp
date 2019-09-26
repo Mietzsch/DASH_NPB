@@ -603,7 +603,7 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 	// double bottomplane[n2][n1];
 	std::vector<double> topplane(n2*n1);
 	std::vector<double> bottomplane(n2*n1);
-	printf("init done.\n");
+	// printf("init done.\n");
 
 	dash::Future<double*> fut_top;
 	dash::Future<double*> fut_bot;
@@ -615,10 +615,10 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 	if(bottomcoord < n3 && z_ext > 0) {
 		fut_bot = dash::copy_async(u.begin()+n2*n1*bottomcoord, u.begin()+n2*n1*(bottomcoord+1), &bottomplane[0]);
 	}
-	printf("copy done.\n");
+	// printf("copy done.\n");
 
 	for(int i3 = 1; i3 < z_ext-1; i3++) {
-		printf("Unit %d trying local plane %d of %d\n", (int) dash::myid(), i3, z_ext);
+		// printf("Unit %d trying local plane %d of %d\n", (int) dash::myid(), i3, z_ext);
 		for (int i2 = 1; i2 < n2-1; i2++) {
 			for (int i1 = 0; i1 < n1; i1++) {
 				u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + u.local(i3-1,i2,i1) + u.local(i3+1,i2,i1);
@@ -638,7 +638,7 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 			}
 		}
 	}
-	printf("Main iter done.\n");
+	// printf("Main iter done.\n");
 
 	if(z_ext > 1) {
 		if(topcoord >= 0) {
@@ -1241,8 +1241,6 @@ static void zran3( dash::NArray<double, 3> &z, int n1, int n2, int n3, int nx, i
 	a2 = power( A, nx*ny );
 
 	zero3(z,n1,n2,n3);
-	dash::barrier();
-	if(dash::myid() == 0) {
 
 	i = is1-1+nx*(is2-1+ny*(is3-1));
 
@@ -1253,19 +1251,35 @@ static void zran3( dash::NArray<double, 3> &z, int n1, int n2, int n3, int nx, i
 	e3 = ie3 - is3 + 2;
 	x0 = X;
 	/*rdummy = */randlc( &x0, ai );
+	auto pattern = z.pattern();
+	auto local_beg_gidx = pattern.coords(pattern.global(0));
+	auto local_end_gidx = pattern.coords(pattern.global(pattern.local_size()-1));
 
-	for (i3 = 1; i3 < e3; i3++) {
+	int start = 0;
+	if(local_beg_gidx[0] == 0) start++;
+
+	int end = z.local.extent(0);
+	if(local_end_gidx[0] == z.extent(0)-1) end--;
+
+	for(int j = 0; j < (int) local_beg_gidx[0]-1; j++){
+		randlc( &x0, a2 );
+	}
+
+	for (i3 = start; i3 < end; i3++) {
 		x1 = x0;
 		for (i2 = 1; i2 < e2; i2++) {
 			xx = x1;
 			double tmp[d1+1];
 			vranlc( d1, &xx, A, tmp);
-			for(int i = 1; i <= d1; i++) z[i3][i2][i] = tmp[i];
+			for(int i = 1; i <= d1; i++) z.local(i3,i2,i) = tmp[i];
 			// vranlc( d1, &xx, A, (double *) &(z[i3][i2][0]));
 			/*rdummy = */randlc( &x1, a1 );
 		}
 		/*rdummy = */randlc( &x0, a2 );
 	}
+
+	dash::barrier();
+	if(dash::myid() == 0) {
 
 	/*--------------------------------------------------------------------
 	c	 call comm3(z,n1,n2,n3)
@@ -1286,18 +1300,20 @@ static void zran3( dash::NArray<double, 3> &z, int n1, int n2, int n3, int nx, i
 		j2[i][0] = 0;
 		j3[i][0] = 0;
 	}
+	double current;
 	for (i3 = 1; i3 < n3-1; i3++) {
 		for (i2 = 1; i2 < n2-1; i2++) {
 			for (i1 = 1; i1 < n1-1; i1++) {
-				if ( z[i3][i2][i1] > ten[0][1] ) {
-					ten[0][1] = z[i3][i2][i1];
+				current = z(i3,i2,i1);
+				if ( current > ten[0][1] ) {
+					ten[0][1] = current;
 					j1[0][1] = i1;
 					j2[0][1] = i2;
 					j3[0][1] = i3;
 					bubble( ten, j1, j2, j3, MM, 1 );
 				}
-				if ( z[i3][i2][i1] < ten[0][0] ) {
-					ten[0][0] = z[i3][i2][i1];
+				if ( current < ten[0][0] ) {
+					ten[0][0] = current;
 					j1[0][0] = i1;
 					j2[0][0] = i2;
 					j3[0][0] = i3;
@@ -1306,45 +1322,44 @@ static void zran3( dash::NArray<double, 3> &z, int n1, int n2, int n3, int nx, i
 			}
 		}
 	}
-
 	/*--------------------------------------------------------------------
 	c	 Now which of these are globally best?
 	c-------------------------------------------------------------------*/
-	i1 = MM - 1;
-	i0 = MM - 1;
-	int jg[4][MM][2];
-	for (i = MM - 1 ; i >= 0; i--) {
-		best = z[j3[i1][1]][j2[i1][1]][j1[i1][1]];
-		if (best == z[j3[i1][1]][j2[i1][1]][j1[i1][1]]) {
-			jg[0][i][1] = 0;
-			jg[1][i][1] = is1 - 1 + j1[i1][1];
-			jg[2][i][1] = is2 - 1 + j2[i1][1];
-			jg[3][i][1] = is3 - 1 + j3[i1][1];
-			i1 = i1-1;
-		} else {
-			jg[0][i][1] = 0;
-			jg[1][i][1] = 0;
-			jg[2][i][1] = 0;
-			jg[3][i][1] = 0;
-		}
-		ten[i][1] = best;
-		best = z[j3[i0][0]][j2[i0][0]][j1[i0][0]];
-		if (best == z[j3[i0][0]][j2[i0][0]][j1[i0][0]]) {
-			jg[0][i][0] = 0;
-			jg[1][i][0] = is1 - 1 + j1[i0][0];
-			jg[2][i][0] = is2 - 1 + j2[i0][0];
-			jg[3][i][0] = is3 - 1 + j3[i0][0];
-			i0 = i0-1;
-		} else {
-			jg[0][i][0] = 0;
-			jg[1][i][0] = 0;
-			jg[2][i][0] = 0;
-			jg[3][i][0] = 0;
-		}
-		ten[i][0] = best;
-	}
-	m1 = i1+1;
-	m0 = i0+1;
+	// i1 = MM - 1;
+	// i0 = MM - 1;
+	// int jg[4][MM][2];
+	// for (i = MM - 1 ; i >= 0; i--) {
+	// 	best = z[j3[i1][1]][j2[i1][1]][j1[i1][1]];
+	// 	if (best == z[j3[i1][1]][j2[i1][1]][j1[i1][1]]) {
+	// 		jg[0][i][1] = 0;
+	// 		jg[1][i][1] = is1 - 1 + j1[i1][1];
+	// 		jg[2][i][1] = is2 - 1 + j2[i1][1];
+	// 		jg[3][i][1] = is3 - 1 + j3[i1][1];
+	// 		i1 = i1-1;
+	// 	} else {
+	// 		jg[0][i][1] = 0;
+	// 		jg[1][i][1] = 0;
+	// 		jg[2][i][1] = 0;
+	// 		jg[3][i][1] = 0;
+	// 	}
+	// 	ten[i][1] = best;
+	// 	best = z[j3[i0][0]][j2[i0][0]][j1[i0][0]];
+	// 	if (best == z[j3[i0][0]][j2[i0][0]][j1[i0][0]]) {
+	// 		jg[0][i][0] = 0;
+	// 		jg[1][i][0] = is1 - 1 + j1[i0][0];
+	// 		jg[2][i][0] = is2 - 1 + j2[i0][0];
+	// 		jg[3][i][0] = is3 - 1 + j3[i0][0];
+	// 		i0 = i0-1;
+	// 	} else {
+	// 		jg[0][i][0] = 0;
+	// 		jg[1][i][0] = 0;
+	// 		jg[2][i][0] = 0;
+	// 		jg[3][i][0] = 0;
+	// 	}
+	// 	ten[i][0] = best;
+	// }
+	// m1 = i1+1;
+	// m0 = i0+1;
 
 	/* printf(" negative charges at");
 	for (i = 0; i < MM; i++) {
