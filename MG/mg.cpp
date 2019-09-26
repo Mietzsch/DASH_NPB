@@ -418,7 +418,7 @@ static void mg3P(std::vector<dash::NArray<double, 3> > &u, dash::NArray<double, 
 c-------------------------------------------------------------------*/
 
 static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n1, int n2, int n3, double c[4], int k) {
-		// if(0 == dash::myid()) printf("psinv\n");
+		if(0 == dash::myid()) printf("psinv\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -445,18 +445,20 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 	int bottomcoord = local_end_gidx[0]+1;
 	int z_ext = u.local.extent(0);
 
-	double topplane[n2][n1];
-	double bottomplane[n2][n1];
+	// double topplane[n2][n1];
+	// double bottomplane[n2][n1];
+	std::vector<double> topplane(n2*n1);
+	std::vector<double> bottomplane(n2*n1);
 
 	dash::Future<double*> fut_top;
 	dash::Future<double*> fut_bot;
 
 	if(topcoord >= 0 && z_ext > 0) {
-		fut_top = dash::copy_async(r.begin()+n2*n1*topcoord, r.begin()+n2*n1*(topcoord+1), &topplane[0][0]);
+		fut_top = dash::copy_async(r.begin()+n2*n1*topcoord, r.begin()+n2*n1*(topcoord+1), &topplane[0]);
 	}
 
 	if(bottomcoord < n3 && z_ext > 0) {
-		fut_bot = dash::copy_async(r.begin()+n2*n1*bottomcoord, r.begin()+n2*n1*(bottomcoord+1), &bottomplane[0][0]);
+		fut_bot = dash::copy_async(r.begin()+n2*n1*bottomcoord, r.begin()+n2*n1*(bottomcoord+1), &bottomplane[0]);
 	}
 
 	for(int i3 = 1; i3 < z_ext-1; i3++) {
@@ -486,8 +488,8 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 
 			for (int i2 = 1; i2 < n2-1; i2++) {
 				for (int i1 = 0; i1 < n1; i1++) {
-					r1[i1] = r.local(i3,i2-1,i1) + r.local(i3,i2+1,i1) + topplane[i2][i1] + r.local(i3+1,i2,i1);
-					r2[i1] = topplane[i2-1][i1] + topplane[i2+1][i1] + r.local(i3+1,i2-1,i1) + r.local(i3+1,i2+1,i1);
+					r1[i1] = r.local(i3,i2-1,i1) + r.local(i3,i2+1,i1) + topplane[i2*n2+i1] + r.local(i3+1,i2,i1);
+					r2[i1] = topplane[(i2-1)*n2+i1] + topplane[(i2+1)*n2+i1] + r.local(i3+1,i2-1,i1) + r.local(i3+1,i2+1,i1);
 				}
 				for (int i1 = 1; i1 < n1-1; i1++) {
 					u.local(i3,i2,i1) = u.local(i3,i2,i1)
@@ -508,8 +510,8 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 
 			for (int i2 = 1; i2 < n2-1; i2++) {
 				for (int i1 = 0; i1 < n1; i1++) {
-					r1[i1] = r.local(i3,i2-1,i1) + r.local(i3,i2+1,i1) + r.local(i3-1,i2,i1) + bottomplane[i2][i1];
-					r2[i1] = r.local(i3-1,i2-1,i1) + r.local(i3-1,i2+1,i1) + bottomplane[i2-1][i1] + bottomplane[i2+1][i1];
+					r1[i1] = r.local(i3,i2-1,i1) + r.local(i3,i2+1,i1) + r.local(i3-1,i2,i1) + bottomplane[i2*n2+i1];
+					r2[i1] = r.local(i3-1,i2-1,i1) + r.local(i3-1,i2+1,i1) + bottomplane[(i2-1)*n2+i1] + bottomplane[(i2+1)*n2+i1];
 				}
 				for (int i1 = 1; i1 < n1-1; i1++) {
 					u.local(i3,i2,i1) = u.local(i3,i2,i1)
@@ -532,8 +534,8 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 
 			for (int i2 = 1; i2 < n2-1; i2++) {
 				for (int i1 = 0; i1 < n1; i1++) {
-					r1[i1] = r.local(i3,i2-1,i1) + r.local(i3,i2+1,i1) + topplane[i2][i1] + bottomplane[i2][i1];
-					r2[i1] = topplane[i2-1][i1] + topplane[i2+1][i1] + bottomplane[i2-1][i1] + bottomplane[i2+1][i1];
+					r1[i1] = r.local(i3,i2-1,i1) + r.local(i3,i2+1,i1) + topplane[i2*n2+i1] + bottomplane[i2*n2+i1];
+					r2[i1] = topplane[(i2-1)*n2+i1] + topplane[(i2+1)*n2+i1] + bottomplane[(i2-1)*n2+i1] + bottomplane[(i2+1)*n2+i1];
 				}
 				for (int i1 = 1; i1 < n1-1; i1++) {
 					u.local(i3,i2,i1) = u.local(i3,i2,i1)
@@ -567,7 +569,7 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 c-------------------------------------------------------------------*/
 
 static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash::NArray<double, 3> &r, int n1, int n2, int n3, double a[4], int k ) {
-		// if(0 == dash::myid()) printf("resid\n");
+		if(0 == dash::myid()) printf("resid\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -583,7 +585,9 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 	c	 Note that this vectorizes, and is also fine for cache
 	c	 based machines.
 	c-------------------------------------------------------------------*/
-	double u1[n1], u2[n1];
+	// double u1[n1], u2[n1];
+	std::vector<double> u1(n1);
+	std::vector<double> u2(n1);
 
 	int myid = dash::myid();
 
@@ -595,21 +599,26 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 	int bottomcoord = local_end_gidx[0]+1;
 	int z_ext = u.local.extent(0);
 
-	double topplane[n2][n1];
-	double bottomplane[n2][n1];
+	// double topplane[n2][n1];
+	// double bottomplane[n2][n1];
+	std::vector<double> topplane(n2*n1);
+	std::vector<double> bottomplane(n2*n1);
+	printf("init done.\n");
 
 	dash::Future<double*> fut_top;
 	dash::Future<double*> fut_bot;
 
 	if(topcoord >= 0 && z_ext > 0) {
-		fut_top = dash::copy_async(u.begin()+n2*n1*topcoord, u.begin()+n2*n1*(topcoord+1), &topplane[0][0]);
+		fut_top = dash::copy_async(u.begin()+n2*n1*topcoord, u.begin()+n2*n1*(topcoord+1), &topplane[0]);
 	}
 
 	if(bottomcoord < n3 && z_ext > 0) {
-		fut_bot = dash::copy_async(u.begin()+n2*n1*bottomcoord, u.begin()+n2*n1*(bottomcoord+1), &bottomplane[0][0]);
+		fut_bot = dash::copy_async(u.begin()+n2*n1*bottomcoord, u.begin()+n2*n1*(bottomcoord+1), &bottomplane[0]);
 	}
+	printf("copy done.\n");
 
 	for(int i3 = 1; i3 < z_ext-1; i3++) {
+		printf("Unit %d trying local plane %d of %d\n", (int) dash::myid(), i3, z_ext);
 		for (int i2 = 1; i2 < n2-1; i2++) {
 			for (int i1 = 0; i1 < n1; i1++) {
 				u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + u.local(i3-1,i2,i1) + u.local(i3+1,i2,i1);
@@ -629,6 +638,7 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 			}
 		}
 	}
+	printf("Main iter done.\n");
 
 	if(z_ext > 1) {
 		if(topcoord >= 0) {
@@ -637,8 +647,8 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 
 			for (int i2 = 1; i2 < n2-1; i2++) {
 				for (int i1 = 0; i1 < n1; i1++) {
-					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + topplane[i2][i1] + u.local(i3+1,i2,i1);
-					u2[i1] = topplane[i2-1][i1] + topplane[i2+1][i1] + u.local(i3+1,i2-1,i1) + u.local(i3+1,i2+1,i1);
+					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + topplane[i2*n2+i1] + u.local(i3+1,i2,i1);
+					u2[i1] = topplane[(i2-1)*n2+i1] + topplane[(i2+1)*n2+i1] + u.local(i3+1,i2-1,i1) + u.local(i3+1,i2+1,i1);
 				}
 				for (int i1 = 1; i1 < n1-1; i1++) {
 					r.local(i3,i2,i1) = v.local(i3,i2,i1)
@@ -660,8 +670,8 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 
 			for (int i2 = 1; i2 < n2-1; i2++) {
 				for (int i1 = 0; i1 < n1; i1++) {
-					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + u.local(i3-1,i2,i1) + bottomplane[i2][i1];
-					u2[i1] = u.local(i3-1,i2-1,i1) + u.local(i3-1,i2+1,i1) + bottomplane[i2-1][i1] + bottomplane[i2+1][i1];
+					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + u.local(i3-1,i2,i1) + bottomplane[i2*n2+i1];
+					u2[i1] = u.local(i3-1,i2-1,i1) + u.local(i3-1,i2+1,i1) + bottomplane[(i2-1)*n2+i1] + bottomplane[(i2+1)*n2+i1];
 				}
 				for (int i1 = 1; i1 < n1-1; i1++) {
 					r.local(i3,i2,i1) = v.local(i3,i2,i1)
@@ -685,8 +695,8 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 
 			for (int i2 = 1; i2 < n2-1; i2++) {
 				for (int i1 = 0; i1 < n1; i1++) {
-					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + topplane[i2][i1] + bottomplane[i2][i1];
-					u2[i1] = topplane[i2-1][i1] + topplane[i2+1][i1] + bottomplane[i2-1][i1] + bottomplane[i2+1][i1];
+					u1[i1] = u.local(i3,i2-1,i1) + u.local(i3,i2+1,i1) + topplane[i2*n2+i1] + bottomplane[i2*n2+i1];
+					u2[i1] = topplane[(i2-1)*n2+i1] + topplane[(i2+1)*n2+i1] + bottomplane[(i2-1)*n2+i1] + bottomplane[(i2+1)*n2+i1];
 				}
 				for (int i1 = 1; i1 < n1-1; i1++) {
 					r.local(i3,i2,i1) = v.local(i3,i2,i1)
@@ -722,7 +732,7 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 c-------------------------------------------------------------------*/
 
 static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::NArray<double, 3> &s, int m1j, int m2j, int m3j, int k ) {
-		// if(0 == dash::myid()) printf("rprj3\n");
+		if(0 == dash::myid()) printf("rprj3\n");
 	/*--------------------------------------------------------------------
 		c-------------------------------------------------------------------*/
 
@@ -884,7 +894,7 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 c-------------------------------------------------------------------*/
 
 static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash::NArray<double, 3> &u, int n1, int n2, int n3, int k ) {
-	// if(0 == dash::myid()) printf("interp\n");
+	if(0 == dash::myid()) printf("interp\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -1150,7 +1160,7 @@ static void rep_nrm( dash::NArray<double, 3> &u, int n1, int n2, int n3, char *t
 c-------------------------------------------------------------------*/
 
 static void comm3( dash::NArray<double, 3> &u, int n1, int n2, int n3) {
-		// if(0 == dash::myid()) printf("comm3\n");
+		if(0 == dash::myid()) printf("comm3\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
