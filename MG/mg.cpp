@@ -793,7 +793,6 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
       r_local_v[i] = std::vector<double> (r_y*r_x);
     }
 		std::vector<double*> r_local(r_planes);
-		// printf("Done. Unit %d. Start %d, end %d.\n", (int) dash::myid(), start, end);
 		int r_idx = 0;
 		int r_psize = r_y*r_x;
 
@@ -823,10 +822,6 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 
 		if(start < end) {
 			i3 = 2*(s_local_beg_gidx[0]+end)-d3;
-			// printf("Tying to access plane %d of %d. Writing in %d of %d. Unit %d. r_psize=%d\n", i3, (int) r.extent(0), r_idx, r_planes, (int) dash::myid(), r_psize);
-			// futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
-			// printf("Last element: %f, should be %f\n", (double) *(r.begin()+r_psize*(i3+1)-1), (double) r(5,5,5));
-			// dash::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local[r_idx][0][0]);
 			if(r(i3,0,0).is_local()) {
 				r_local[r_idx] = r.lbegin()+r_psize*(i3-r_offset);
 				futs[r_idx] = dash::copy_async(r.begin()+r_psize*(i3), r.begin()+r_psize*(i3)+1, &r_local_v[r_idx][0]);
@@ -834,8 +829,6 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 				futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local_v[r_idx][0]);
 				r_local[r_idx] = r_local_v[r_idx].data();
 			}
-			// std::copy(r.begin()+r_psize*i3, r.begin()+r_psize*(i3+1), &r_local_v[r_idx][0]);
-			// futs[r_idx] = dash::copy_async(r.begin()+r_psize*i3, r.begin()+r_psize*i3+1, &r_local_v[r_idx][0]);
 			r_idx = 0;
 		}
 
