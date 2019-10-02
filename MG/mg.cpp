@@ -996,14 +996,8 @@ static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash:
 					futs[j3-start+1] = dash::copy_async(z.begin()+z_size*(i3+1), z.begin()+z_size*(i3+1), z_local_v[j3-start+1].data());
 					is_local[j3-start+1] = true;
 				} else {
-					if(i3+2 == (int) z.extent(0)) { //////////This should in no way be necessary...
-						std::copy(z.begin()+z_size*(i3+1), z.end(), &z_local_v[j3-start+1][0]);
-						futs[j3-start+1] = dash::copy_async(z.begin()+z_size*(i3+1), z.begin()+z_size*(i3+1), z_local_v[j3-start+1].data());
-						z_local[j3-start+1] = z_local_v[j3-start+1].data();
-					} else {
 						futs[j3-start+1] = dash::copy_async(z.begin()+z_size*(i3+1), z.begin()+z_size*(i3+2), z_local_v[j3-start+1].data());
 						z_local[j3-start+1] = z_local_v[j3-start+1].data();
-					}
 				}
 			}
 

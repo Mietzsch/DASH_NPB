@@ -17,8 +17,8 @@ c  dimension of the problem: 128 for class A, 256 for class B and
 c  512 for class C.
 */
 
-#define	FFTBLOCK_DEFAULT	16
-#define	FFTBLOCKPAD_DEFAULT	16 //original: 18
+#define	FFTBLOCK_DEFAULT	64
+#define	FFTBLOCKPAD_DEFAULT	64 //original: 18
 
 #define FFTBLOCK	FFTBLOCK_DEFAULT
 #define FFTBLOCKPAD	FFTBLOCKPAD_DEFAULT

@@ -22,7 +22,6 @@
 #include <iostream>
 #include <../common/npb-CPP.hpp>
 
-//#include "../common/mystl.h"
 
 /* parameters */
 #define	MK		16
@@ -217,19 +216,7 @@ int main(int argc, char **argv) {
 
 	res.barrier();
 
-	if ( 0 == dash::myid() ) {/*
-
-		for( auto i = 1; i < dash::size(); ++i) {
-
-			res.local[0].sx += ((ep_res) res[i]).sx;
-			res.local[0].sy += ((ep_res) res[i]).sy;
-
-			for(j=0; j < NQ; ++j) {
-				res.local[0].q[j] += ((ep_res) res[i]).q[j];
-			}
-		}*/
-
-
+	if ( 0 == dash::myid() ) {
 
 		for (i = 0; i <= NQ-1; i++) {
 			gc = gc + res.local[0].q[i];
@@ -289,7 +276,6 @@ int main(int argc, char **argv) {
 			printf("Total time:	 %f\n", timer_read(1));
 			printf("Gaussian pairs: %f\n", timer_read(2));
 			printf("Random numbers: %f\n", timer_read(3));
-			printf("Time in STL:	%f\n", timer_read(4));
 		}
 
 	}

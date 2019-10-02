@@ -35,14 +35,12 @@ CLINK	= $(CC)
 #---------------------------------------------------------------------------
 # These macros are passed to the linker
 #---------------------------------------------------------------------------
-#C_LIB  = -lm -ltbb
-C_LIB = -L/home/nicco/opt/dash-0.4.0/lib
+C_LIB = -L$(HOME)/opt/dash-0.4.0/lib
 
 #---------------------------------------------------------------------------
 # These macros are passed to the compiler
 #---------------------------------------------------------------------------
-#C_INC = -I../common
-C_INC = -I../common -I/home/nicco/opt/dash-0.4.0/include
+C_INC = -I../common -I$(HOME)/opt/dash-0.4.0/include
 
 #---------------------------------------------------------------------------
 # Global *compile time* flags for C programs (use -w3 -diag-disable 981 -diag-disable 383)
