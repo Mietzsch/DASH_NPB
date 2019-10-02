@@ -14,8 +14,6 @@
 #include <libdash.h>
 
 #include <vector>
-#include <array>
-
 #include <iostream>
 #include "npb-CPP.hpp"
 
@@ -418,7 +416,6 @@ static void mg3P(std::vector<dash::NArray<double, 3> > &u, dash::NArray<double, 
 c-------------------------------------------------------------------*/
 
 static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n1, int n2, int n3, double c[4], int k) {
-		// if(0 == dash::myid()) printf("psinv\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -569,7 +566,6 @@ static void psinv( dash::NArray<double, 3> &r, dash::NArray<double, 3> &u, int n
 c-------------------------------------------------------------------*/
 
 static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash::NArray<double, 3> &r, int n1, int n2, int n3, double a[4], int k ) {
-		// if(0 == dash::myid()) printf("resid\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -732,7 +728,6 @@ static void resid( dash::NArray<double, 3> &u, dash::NArray<double, 3> &v, dash:
 c-------------------------------------------------------------------*/
 
 static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::NArray<double, 3> &s, int m1j, int m2j, int m3j, int k ) {
-		// if(0 == dash::myid()) printf("rprj3\n");
 	/*--------------------------------------------------------------------
 		c-------------------------------------------------------------------*/
 
@@ -926,7 +921,6 @@ static void rprj3( dash::NArray<double, 3> &r, int m1k, int m2k, int m3k, dash::
 c-------------------------------------------------------------------*/
 
 static void interp( dash::NArray<double, 3> &z, int mm1, int mm2, int mm3, dash::NArray<double, 3> &u, int n1, int n2, int n3, int k ) {
-	// if(0 == dash::myid()) printf("interp\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
@@ -1235,7 +1229,6 @@ static void rep_nrm( dash::NArray<double, 3> &u, int n1, int n2, int n3, char *t
 c-------------------------------------------------------------------*/
 
 static void comm3( dash::NArray<double, 3> &u, int n1, int n2, int n3) {
-		// if(0 == dash::myid()) printf("comm3\n");
 	/*--------------------------------------------------------------------
 	c-------------------------------------------------------------------*/
 
